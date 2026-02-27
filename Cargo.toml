@@ -1,0 +1,14 @@
+[workspace]
+members = ["servidor", "cliente", "protocolo"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Emilio Martínez García <e.martinez.g@ciencias.unam.mx>"]
+license = "GPL-3.0-or-later"
+rust-version = "1.93.1"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
