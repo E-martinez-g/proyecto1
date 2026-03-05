@@ -1,5 +1,8 @@
 use serde::Serialize;
 
+/**
+ * Enumeración para el estado de los usuarios.
+ */
 #[derive(Serialize)]
 pub enum EstadoUsuario {
     ACTIVE,
