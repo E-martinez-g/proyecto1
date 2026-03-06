@@ -65,6 +65,8 @@ fn server_address() -> String {
 async fn maneja_usuario(mut stream: TcpStream, direccion: SocketAddr) {
     let mut buffer = [0u8; 1024];
     
+    let name;
+    
     loop {
 	let n = match stream.read(&mut buffer).await {
 	    Ok(0) => return,
@@ -101,6 +103,7 @@ async fn maneja_usuario(mut stream: TcpStream, direccion: SocketAddr) {
 				  direccion);
 			return;
 		    }
+		name = usr.clone();
 		NOMBRES.write().await.insert(usr);
 		break;
 	    }
@@ -115,4 +118,5 @@ async fn maneja_usuario(mut stream: TcpStream, direccion: SocketAddr) {
 	    }
 	}
     }
+    NOMBRES.write().await.remove(&name);
 }
