@@ -37,7 +37,7 @@ pub fn response(opr: String, res: String) -> String {
  * `ext` - Un `String` con el mensaje extra.
  */
 pub fn response_extra(opr: String, res: String,
-		      ext: String) -> String {
+		      ext: &String) -> String {
     json!({
 	"type": "RESPONSE",
 	"operation": opr,

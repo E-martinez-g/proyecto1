@@ -1,35 +1,54 @@
 use std::env::args;
-use std::net::IpAddr;
-use std::net::Ipv4Addr;
-use tokio::net::TcpStream;
-use tokio::net::TcpListener;
-use protocolo::mensajes_servidor;
-use protocolo::EstadoUsuario;
-use std::collections::HashMap;
-use std::collections::HashSet;
+
+use std::sync::LazyLock;
+use tokio::sync::RwLock;
+
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use tokio::net::{TcpStream, TcpListener};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+
+use protocolo::mensajes_servidor::*;
+use protocolo::ClientType::*;
+use protocolo::*;
+
+use std::collections::{HashMap, HashSet};
+
+type Usernames = LazyLock<RwLock<HashSet<String>>>;
+
+static NOMBRES: Usernames = LazyLock::new(|| {RwLock::new(HashSet::new())});
 
 #[tokio::main]
 async fn main() {
-
-    let mut nombres: HashSet<String> = HashSet::new();
-    let mut usuarios: HashMap<String, EstadoUsuario> = HashMap::new();
-    let mut clientes: HashMap<String, TcpStream> = HashMap::new();
     
-    let address = socket_address();
-    let listener = match TcpListener::bind(&address).await {
+    let direccion_servidor = server_address();
+    let servidor = match TcpListener::bind(&direccion_servidor).await {
 	Ok(a) => a,
 
-	Err(_) => { eprintln!("No se pudo crear el servidor en {}", address);
-		    return; },
+	Err(_) => {
+	    eprintln!("No se pudo crear el servidor en {}", direccion_servidor);
+	    return;
+	},
     };
+
+    loop {
+	match servidor.accept().await {
+	    Ok((stream, direccion)) => {
+		tokio::spawn(maneja_usuario(stream, direccion));
+	    }
+	    Err(e) => {
+		eprintln!("Ocurrió un error al aceptar una conexión ({})", e);
+	    }
+	}
+    }
 }
 
 /**
- * Provee la dirección del socket a partir de los argumentos del programa.
+ * Provee la dirección del servidor a partir de los argumentos del programa.
  * El puerto por omisión es 42069.
  * La dirección IP por omisión es 127.0.0.1.
  */
-fn socket_address() -> String {
+fn server_address() -> String {
     let ip = args().nth(1).unwrap_or_default()
 	     .parse::<IpAddr>().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
     
@@ -38,4 +57,62 @@ fn socket_address() -> String {
     if port < 1024 { port = 42069; }
     
     format!("{}:{}", ip, port)
+}
+
+/**
+ * Maneja la conexión de cada cliente.
+ */
+async fn maneja_usuario(mut stream: TcpStream, direccion: SocketAddr) {
+    let mut buffer = [0u8; 1024];
+    
+    loop {
+	let n = match stream.read(&mut buffer).await {
+	    Ok(0) => return,
+	    Ok(n) => n,
+	    Err(e) => {
+		eprintln!("Al leer de {} ocurrió un error {}.",
+			  direccion, e);
+		return;
+	    },
+	};
+	match parsea_mensaje_cliente(String::from_utf8_lossy(&buffer[..n])
+				     .to_string()) {
+	    Err(_) => {
+		eprintln!("El mensaje recibido fue inválido");
+		return;
+	    },
+	    Ok(Identify {username: usr}) => {
+		if NOMBRES.read().await.contains(&usr) {
+		    if let Err(_) =
+			stream.write(response_extra("IDENTIFY".to_string(),
+						  "USER_ALREADY_EXISTS".to_string(),
+						  &usr).as_bytes()).await {
+			    eprintln!("Ocurrió un error al responder a {}.",
+				      direccion);
+			    return;
+			}
+		    continue;
+		}
+		if let Err(_) =
+		    stream.write(response_extra("IDENTIFY".to_string(),
+						"SUCCESS".to_string(),
+						&usr).as_bytes()).await {
+			eprintln!("Ocurrió un error al responder a {}.",
+				  direccion);
+			return;
+		    }
+		NOMBRES.write().await.insert(usr);
+		break;
+	    }
+	    Ok(_) => {
+		if let Err(_) = stream.write(response("INVALID".to_string(),
+						      "NOT_IDENTIFIED".to_string())
+					     .as_bytes()).await {
+		    eprintln!("Ocurrió un error al responder a {}.",
+			      direccion);
+		    return;
+		}
+	    }
+	}
+    }
 }
