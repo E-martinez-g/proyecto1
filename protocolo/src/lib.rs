@@ -1,7 +1,26 @@
+use std::env::args;
+use std::net::{IpAddr, Ipv4Addr};
+
 use serde::{Serialize, Deserialize};
 
 use std::option::Option;
 use std::collections::HashMap;
+
+/**
+ * Provee la dirección del servidor a partir de los argumentos del programa.
+ * El puerto por omisión es 42069.
+ * La dirección IP por omisión es 127.0.0.1.
+ */
+pub fn server_address() -> String {
+    let ip = args().nth(1).unwrap_or_default()
+	     .parse::<IpAddr>().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    
+    let mut port = args().nth(2).unwrap_or_default()
+	           .parse::<u16>().unwrap_or_default();
+    if port < 1024 { port = 42069; }
+    
+    format!("{}:{}", ip, port)
+}
 
 /**
  * Enumeración para el estado de los usuarios.
