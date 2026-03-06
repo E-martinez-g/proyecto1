@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 use tokio::sync::RwLock;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use tokio::net::{TcpStream, TcpListener};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -10,7 +10,7 @@ use protocolo::mensajes_servidor::*;
 use protocolo::ClientType::*;
 use protocolo::*;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 type Usernames = LazyLock<RwLock<HashSet<String>>>;
 
@@ -57,7 +57,7 @@ async fn maneja_usuario(mut stream: TcpStream, direccion: SocketAddr) {
     loop {
 	let n = match stream.read(&mut buffer).await {
 	    Ok(0) => return,
-	    Ok(n) => n,
+	    Ok(a) => a,
 	    Err(e) => {
 		eprintln!("Al leer de {} ocurrió un error {}.",
 			  direccion, e);
@@ -67,7 +67,8 @@ async fn maneja_usuario(mut stream: TcpStream, direccion: SocketAddr) {
 	match parsea_mensaje_cliente(String::from_utf8_lossy(&buffer[..n])
 				     .to_string()) {
 	    Err(_) => {
-		eprintln!("El mensaje recibido fue inválido");
+		eprintln!("El mensaje por el cliente en {} fue inválido.",
+			  direccion);
 		return;
 	    },
 	    Ok(Identify {username: usr}) => {
@@ -119,8 +120,8 @@ async fn maneja_usuario(mut stream: TcpStream, direccion: SocketAddr) {
 	match parsea_mensaje_cliente(String::from_utf8_lossy(&buffer[..n])
 				     .to_string()) {
 	    Err(_) => {
-		eprintln!("El mensaje enviado por el cliente {} fue inválido.",
-			  direccion);
+		eprint!("El mensaje enviado por el cliente en {}", direccion);
+		eprintln!(" ({}) fue inválido.", name);
 		break;
 	    },
 	    Ok(Identify {..}) => {
