@@ -61,6 +61,11 @@ fn server_address() -> String {
 
 /**
  * Maneja la conexión de cada cliente.
+ *
+ * # Argumentos
+ *
+ * `stream` - El `TcpStream` para leer y escribir información del cliente.
+ * `direccion` - La dirección del cliente.
  */
 async fn maneja_usuario(mut stream: TcpStream, direccion: SocketAddr) {
     let mut buffer = [0u8; 1024];
@@ -118,5 +123,46 @@ async fn maneja_usuario(mut stream: TcpStream, direccion: SocketAddr) {
 	    }
 	}
     }
+    loop {
+	let n = match stream.read(&mut buffer).await {
+	    Ok(0) => break,
+	    Ok(n) => n,
+	    Err(e) => {
+		eprintln!("Al leer de {} ocurrió un error {}.",
+			  direccion, e);
+		break;
+	    },
+	};
+
+	match parsea_mensaje_cliente(String::from_utf8_lossy(&buffer[..n])
+				     .to_string()) {
+	    Err(_) => {
+		eprintln!("El mensaje enviado por el cliente {} fue inválido.",
+			  direccion);
+		break;
+	    },
+	    Ok(Identify {..}) => {
+		eprintln!("El cliente {} se intentó identificar dos veces",
+			  direccion);
+	    }
+	    Ok(ct) => {
+		maneja_solicitud(ct);
+	    },
+	}
+    }
     NOMBRES.write().await.remove(&name);
+}
+
+/**
+ * Realiza las acciones acorde a la solicitud del cliente.
+ *
+ * # Argumentos
+ *
+ * `ct` - una instancia de `ClientType` asociada a la instrucción que se
+ *        desea realizar y que contiene lo necesario para realizarla.
+ */
+fn maneja_solicitud(ct: ClientType) {
+    match ct {
+	_ => println!("No hay implementación de nada.")
+    }
 }
