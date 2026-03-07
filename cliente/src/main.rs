@@ -28,7 +28,10 @@ fn main() {
 		    return;
 		}
 	    },
-	    Ok(nombre) => println!("¡Hola, {}!", nombre)
+	    Ok(nombre) => {
+		println!("¡Hola, {}!", nombre);
+		break;
+	    }
 	}
     }
 }

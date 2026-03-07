@@ -11,6 +11,7 @@ use protocolo::ClientType::*;
 use protocolo::*;
 
 use std::collections::HashSet;
+use std::option::Option;
 
 type Usernames = LazyLock<RwLock<HashSet<String>>>;
 
@@ -149,3 +150,5 @@ fn maneja_solicitud(ct: ClientType) {
 	_ => println!("No hay implementación de nada.")
     }
 }
+
+pub mod util;
