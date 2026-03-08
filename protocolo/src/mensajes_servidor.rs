@@ -13,12 +13,12 @@ use std::collections::HashMap;
  * `res` - Un `String` con el resultado de la
  *         operación.
  */
-pub fn response(opr: String, res: String) -> String {
+pub fn response(opr: &str, res: &str) -> String {
     json!({
 	"type": "RESPONSE",
 	"operation": opr,
 	"result": res
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -36,14 +36,14 @@ pub fn response(opr: String, res: String) -> String {
  * <br>
  * `ext` - Un `String` con el mensaje extra.
  */
-pub fn response_extra(opr: String, res: String,
+pub fn response_extra(opr: &str, res: &str,
 		      ext: &String) -> String {
     json!({
 	"type": "RESPONSE",
 	"operation": opr,
 	"result": res,
 	"extra": ext
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -58,7 +58,7 @@ pub fn new_user(usr: &String) -> String {
     json!({
 	"type": "NEW_USER",
 	"username": usr
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -78,7 +78,7 @@ pub fn new_status(usr: &String, sta: &super::EstadoUsuario) -> String {
 	"type": "NEW_STATUS",
 	"username": usr,
 	"status": sta
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -95,7 +95,7 @@ pub fn user_list(usrs: &HashMap<String, String>) -> String {
     json!({
 	"type": "USER_LIST",
 	"users": usrs
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -113,7 +113,7 @@ pub fn text_from(usr: &String, msg: String) -> String {
 	"type": "TEXT_FROM",
 	"username": usr,
 	"text": msg
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -131,7 +131,7 @@ pub fn public_text_from(usr: &String, msg: String) -> String {
 	"type": "PUBLIC_TEXT_FROM",
 	"username": usr,
 	"text": msg
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -150,7 +150,7 @@ pub fn joined_room(room: &String, usr: &String) -> String {
 	"type": "JOINED_ROOM",
 	"roomname": room,
 	"username": usr
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -173,7 +173,7 @@ pub fn room_user_list(room: &String,
 	"type": "ROOM_USER_LIST",
 	"roomname": room,
 	"users": usrs
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -197,7 +197,7 @@ pub fn room_text_from(room: &String, usr: &String,
 	"roomname": room,
 	"username": usr,
 	"text": msg
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -216,7 +216,7 @@ pub fn left_room(room: &String, usr: &String) -> String {
 	"type": "LEFT_ROOM",
 	"roomname": room,
 	"username": usr
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -231,5 +231,5 @@ pub fn disconnected(usr: &String) -> String {
     json!({
 	"type": "DISCONNECTED",
 	"username": usr
-    }).to_string()
+    }).to_string() + "\n"
 }

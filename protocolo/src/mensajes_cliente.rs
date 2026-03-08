@@ -12,7 +12,7 @@ pub fn identify(usr: &String) -> String {
     json!({
 	"type": "IDENTIFY",
 	"username": usr
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -28,7 +28,7 @@ pub fn status(sta: &super::EstadoUsuario) -> String {
     json!({
 	"type": "STATUS",
 	"status": sta
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -37,7 +37,7 @@ pub fn status(sta: &super::EstadoUsuario) -> String {
 pub fn users() -> String {
     json!({
 	"type": "USERS"
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -55,7 +55,7 @@ pub fn text(usr: String, msg: String) -> String {
 	"type": "TEXT",
 	"username": usr,
 	"text": msg
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -69,7 +69,7 @@ pub fn public_text(msg: String) -> String {
     json!({
 	"type": "PUBLIC_TEXT",
 	"text": msg 
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -84,7 +84,7 @@ pub fn new_room(room: &String) -> String {
     json!({
 	"type": "NEW_ROOM",
 	"roomname": room
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -103,7 +103,7 @@ pub fn invite(room: &String, usrs: Vec<String>) -> String {
 	"type": "INVITE",
 	"roomname": room,
 	"usernames": usrs
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -118,7 +118,7 @@ pub fn join_room(room: &String) -> String {
     json!({
 	"type": "JOIN_ROOM",
 	"roomname": room
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -134,7 +134,7 @@ pub fn room_users(room: &String) -> String {
     json!({
 	"type": "ROOM_USERS",
 	"roomname": room
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -154,7 +154,7 @@ pub fn room_text(room: &String, msg: String) -> String {
 	"type": "ROOM_TEXT",
 	"roomname": room,
 	"text": msg
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -169,7 +169,7 @@ pub fn leave_room(room: &String) -> String {
     json!({
 	"type": "LEAVE_ROOM",
 	"roomname": room
-    }).to_string()
+    }).to_string() + "\n"
 }
 
 /**
@@ -178,5 +178,5 @@ pub fn leave_room(room: &String) -> String {
 pub fn disconnect() -> String {
     json!({
 	"type": "DISCONNECT"
-    }).to_string()
+    }).to_string() + "\n"
 }

@@ -14,8 +14,8 @@ use std::io::Error;
  */
 pub fn recibido(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String>) {
     match nombre {
-	None => println!("** MENSAJE RECIBIDO DE {}: {}\n", direccion, mensaje),
-	Some(n) => println!("** MENSAJE RECIBIDO DE {} ({}): {}\n", direccion, n, mensaje),
+	None => println!("** MENSAJE RECIBIDO DE {}: {}", direccion, mensaje),
+	Some(n) => println!("** MENSAJE RECIBIDO DE {} ({}): {}", direccion, n, mensaje),
     }
 }
 
@@ -31,8 +31,8 @@ pub fn recibido(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String
  */
 pub fn enviado(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String>) {
     match nombre {
-	None => println!("** MENSAJE ENVIADO A {}: {}\n", direccion, mensaje),
-	Some(n) => println!("** MENSAJE ENVIADO A {} ({}): {}\n", direccion, n, mensaje),
+	None => println!("** MENSAJE ENVIADO A {}: {}", direccion, mensaje),
+	Some(n) => println!("** MENSAJE ENVIADO A {} ({}): {}", direccion, n, mensaje),
     }
 }
 
@@ -75,7 +75,7 @@ pub fn error(e: ErrorServidor) {
 /**
  * Enumeración para los errores que pueden ocurrir
  */
-pub enum ErrorServidor {
+pub enum ErrorServidor{
     Creacion { error:Error, direccion: String },
     Aceptacion { error: Error },
     Recepcion { error: Error, direccion: SocketAddr, nombre: Option<String> },
