@@ -1,5 +1,5 @@
 use std::sync::LazyLock;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, broadcast, mpsc};
 
 use std::net::SocketAddr;
 use tokio::net::{TcpStream, TcpListener};
@@ -18,9 +18,17 @@ use std::option::Option;
 use bitacora::ErrorServidor::*;
 use bitacora::*;
 
-type Usernames = LazyLock<RwLock<HashMap<String, EstadoUsuario>>>;
+type Users = HashMap<String, EstadoUsuario>;
+static USUARIOS: LazyLock<RwLock<Users>> =
+    LazyLock::new(|| {RwLock::new(HashMap::new())});
 
-static USUARIOS: Usernames = LazyLock::new(|| {RwLock::new(HashMap::new())});
+type Clientes = HashMap<String, mpsc::Receiver<String>>;
+static CLIENTES: LazyLock<RwLock<Clientes>> =
+    LazyLock::new(|| {RwLock::new(HashMap::new())});
+
+type Cuartos = HashMap<String, broadcast::Sender<String>>;
+static CUARTOS: LazyLock<RwLock<Cuartos>> =
+    LazyLock::new(|| {RwLock::new(HashMap::new())});
 
 /**
  * Crea el servidor y acepta clientes.
@@ -33,11 +41,12 @@ async fn main() {
 	Ok(a) => a,
 
 	Err(e) => {
-	    bitacora::error(Creacion { error: e, direccion: direccion_servidor });
+	    bitacora::error(Creacion { error: e,
+				       direccion: direccion_servidor });
 	    return;
 	},
     };
-
+    
     loop {
 	match servidor.accept().await {
 	    Ok((stream, direccion)) => {
@@ -78,37 +87,8 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 	    return;
 	}
     };
-
-    let mut buffer = [0u8;512];
+    USUARIOS.write().await.insert(name.clone(), ACTIVE);
     
-    loop {
-	let n = match ts.read(&mut buffer).await {
-	    Ok(0) => break,
-	    Ok(n) => n,
-	    Err(e) => {
-		eprintln!("Al leer de {} ocurrió un error {}.",
-			  d, e);
-		break;
-	    },
-	};
-
-	match parsea_mensaje_cliente(String::from_utf8_lossy(&buffer[..n])
-				     .to_string()) {
-	    Err(_) => {
-		eprint!("El mensaje enviado por el cliente en {}", d);
-		eprintln!(" ({}) fue inválido.", name);
-		break;
-	    },
-	    Ok(Identify {..}) => {
-		eprintln!("El cliente {} se intentó identificar dos veces",
-			  d);
-		break;
-	    }
-	    Ok(ct) => {
-		maneja_solicitud(ct);
-	    },
-	}
-    }
     USUARIOS.write().await.remove(&name);
 }
 
@@ -161,9 +141,7 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 		    return Err(Envio{ error: e, direccion: *d,
 				      nombre: None });
 		}
-		let name = u.clone();
-		USUARIOS.write().await.insert(u, ACTIVE);
-		return Ok( Some(name) );
+		return Ok( Some(u) );
 	    },
 
 	    Ok(_) => {
