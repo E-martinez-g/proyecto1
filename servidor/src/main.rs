@@ -46,6 +46,9 @@ async fn main() {
 	    return;
 	},
     };
+
+    let (_, main_sender) = broadcast::channel::<String>(256);
+    CUARTOS.write().await.insert("MAIN", main_sender);
     
     loop {
 	match servidor.accept().await {
@@ -88,8 +91,20 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 	}
     };
     USUARIOS.write().await.insert(name.clone(), ACTIVE);
+
+    let (sender, mut receiver) = mpsc::channel::<String>(128);    
+    CLIENTES.write().await.insert(name.clone(), sender);
+
+    join_main_room(&name);    
+    
+    loop {
+	tokio::select!{
+	    Ok(msg) = 
+	}
+    }
     
     USUARIOS.write().await.remove(&name);
+    CLIENTES.write().await.remove(&name);
 }
 
 /**
@@ -111,12 +126,12 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 	    Ok(0) => return Ok(None),
 	    Ok(a) => a,
 	    Err(e) => return Err(Recepcion{ error: e, direccion: *d,
-					     nombre: None }),
+					    nombre: None }),
 	};
 	
 	let rec = String::from_utf8_lossy(&buffer[..n]).to_string();
 	bitacora::recibido(&rec, d, None);
-
+	
 	match parsea_mensaje_cliente(rec) {
 	    Err(_) => return Err(Invalido{ direccion: *d,
 					   nombre: None }),
@@ -164,10 +179,22 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
  * `ct` - una instancia de `ClientType` asociada a la instrucción que se
  *        desea realizar y que contiene lo necesario para realizarla.
  */
-fn maneja_solicitud(ct: ClientType) {
-    match ct {
-	_ => println!("No hay implementación de nada.")
-    }
+fn maneja_solicitud(ct: ClientType) {}
+
+/**
+ * Mete al usuario al cuarto principal.
+ *
+ * # Argumentos
+ *
+ * `nom` - Un String que contiene el nombre del usuario.
+ */
+pub join_main_room(nom: &String) {
+    let main_receiver = CUARTOS.read().await.get("MAIN").unwrap().subscribe();
+    let sender_cliente = CLIENTES.read().await.get(nom).unwrap().clone();
+    tokio::spawn(async move {
+	
+    }) 
 }
 
 pub mod bitacora;
+pub mod util;
