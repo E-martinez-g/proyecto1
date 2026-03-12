@@ -6,7 +6,6 @@ use tokio::net::{TcpStream, TcpListener};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-
 use protocolo::mensajes_servidor::*;
 use protocolo::EstadoUsuario::*;
 use protocolo::ClientType::*;
@@ -18,11 +17,13 @@ use std::option::Option;
 use bitacora::ErrorServidor::*;
 use bitacora::*;
 
+use util::*;
+
 type Users = HashMap<String, EstadoUsuario>;
 static USUARIOS: LazyLock<RwLock<Users>> =
     LazyLock::new(|| {RwLock::new(HashMap::new())});
 
-type Clientes = HashMap<String, mpsc::Receiver<String>>;
+type Clientes = HashMap<String, mpsc::Sender<String>>;
 static CLIENTES: LazyLock<RwLock<Clientes>> =
     LazyLock::new(|| {RwLock::new(HashMap::new())});
 
@@ -30,7 +31,10 @@ type Cuartos = HashMap<String, broadcast::Sender<String>>;
 static CUARTOS: LazyLock<RwLock<Cuartos>> =
     LazyLock::new(|| {RwLock::new(HashMap::new())});
 
-/**
+static MAINROOM: LazyLock<RwLock<broadcast::Sender<String>>> =
+    LazyLock::new(|| {RwLock::new(broadcast::channel::<String>(256).0)});
+
+/* *
  * Crea el servidor y acepta clientes.
  */
 #[tokio::main]
@@ -46,9 +50,6 @@ async fn main() {
 	    return;
 	},
     };
-
-    let (_, main_sender) = broadcast::channel::<String>(256);
-    CUARTOS.write().await.insert("MAIN", main_sender);
     
     loop {
 	match servidor.accept().await {
@@ -72,16 +73,13 @@ async fn main() {
  */
 async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
     
-    let name = match espera_identificacion(&mut ts, &d).await {
+    let name: String = match espera_identificacion(&mut ts, &d).await {
 	Ok(None) => return,
 	Ok( Some(u) ) => u,
 	Err( e @ Invalido{ direccion: d, nombre: None } ) => {
 	    bitacora::error(e);
-	    let env = response("INVALID", "INVALID");
-	    bitacora::enviado(&env, &d, None);
-	    if let Err(e) = ts.write(env.as_bytes()).await {
-		bitacora::error(Envio{ error: e, direccion: d,
-				       nombre: None });
+	    if let Err(e2) = envia(&d, &mut ts, None, response("INVALID", "INVALID")).await {
+		bitacora::error(e2);
 	    }
 	    return;
 	},
@@ -92,14 +90,19 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
     };
     USUARIOS.write().await.insert(name.clone(), ACTIVE);
 
-    let (sender, mut receiver) = mpsc::channel::<String>(128);    
+    let (sender, mut receiver) = mpsc::channel::<String>(128);
     CLIENTES.write().await.insert(name.clone(), sender);
 
-    join_main_room(&name);    
+    join_main_room(&name);
     
     loop {
 	tokio::select!{
-	    Ok(msg) = 
+	    recv = receiver.recv() => {
+		println!("Nada");
+	    }
+	    msg = recibe(&d, &mut ts, Some(&name)) => {
+		println!("Nadota");
+	    }
 	}
     }
     
@@ -118,20 +121,14 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
  */
 async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 			     -> Result<Option<String>, ErrorServidor> {
-    
-    let mut buffer = [0u8; 512];
 
     loop {
-	let n = match ts.read(&mut buffer).await {
-	    Ok(0) => return Ok(None),
-	    Ok(a) => a,
-	    Err(e) => return Err(Recepcion{ error: e, direccion: *d,
-					    nombre: None }),
+	let rec = match recibe(d, ts, None).await {
+	    Ok(None) => return Ok(None),
+	    Err(e) => return Err(e),
+	    Ok(Some(msg)) => msg
 	};
-	
-	let rec = String::from_utf8_lossy(&buffer[..n]).to_string();
-	bitacora::recibido(&rec, d, None);
-	
+
 	match parsea_mensaje_cliente(rec) {
 	    Err(_) => return Err(Invalido{ direccion: *d,
 					   nombre: None }),
@@ -139,32 +136,25 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 	    Ok(Identify{ username: u }) => {
 		
 		if USUARIOS.read().await.contains_key(&u) {
-		    let env = response_extra("IDENTIFY",
-					     "USER_ALREADY_EXISTS",
-					     &u);
-		    bitacora::enviado(&env, d, None);
-		    if let Err(e) = ts.write(env.as_bytes()).await {
-			return Err(Envio{ error: e, direccion: *d,
-					  nombre: None});
+		    if let Err(e) = envia(d, ts, None, response_extra("IDENTIFY",
+								      "USER_ALREADY_EXISTS",
+								      &u)).await {
+			return Err(e);
 		    }
 		    continue;
 		}		
-
-		let env = response_extra("IDENTIFY", "SUCCESS", &u);
-		bitacora::enviado(&env, d, Some(&u));
-		if let Err(e) = ts.write(env.as_bytes()).await {
-		    return Err(Envio{ error: e, direccion: *d,
-				      nombre: None });
+		if let Err(e) = envia(d, ts, Some(&u), response_extra("IDENTIFY",
+								      "SUCCESS",
+								      &u)).await {
+		    return Err(e);
 		}
-		return Ok( Some(u) );
+		return Ok(Some(u));
 	    },
 
 	    Ok(_) => {
-		let env = response("INVALID", "NOT_IDENTIFIED");
-		bitacora::enviado(&env, d, None);
-		if let Err(e) = ts.write(&env.as_bytes()).await {
-		    return Err(Envio{ error: e, direccion: *d,
-				      nombre: None});
+		if let Err(e) = envia(d, ts, None, response("INVALID",
+							    "NOT_IDENTIFIED")).await {
+		    return Err(e);
 		}
 	    },
 	}
@@ -179,7 +169,9 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
  * `ct` - una instancia de `ClientType` asociada a la instrucción que se
  *        desea realizar y que contiene lo necesario para realizarla.
  */
-fn maneja_solicitud(ct: ClientType) {}
+async fn maneja_solicitud(ct: ClientType) {
+    println!("NO HAY IMPLEMENTACIÓN DE NADA");
+}
 
 /**
  * Mete al usuario al cuarto principal.
@@ -188,12 +180,33 @@ fn maneja_solicitud(ct: ClientType) {}
  *
  * `nom` - Un String que contiene el nombre del usuario.
  */
-pub join_main_room(nom: &String) {
-    let main_receiver = CUARTOS.read().await.get("MAIN").unwrap().subscribe();
+async fn join_main_room(nom: &String) {
+    let main_sender = MAINROOM.read().await.clone();
+    let mut main_receiver = main_sender.subscribe();
     let sender_cliente = CLIENTES.read().await.get(nom).unwrap().clone();
     tokio::spawn(async move {
-	
-    }) 
+	loop {
+	    match main_receiver.recv().await {
+		Ok(msg) => {
+		    if let Err(_) = sender_cliente.send(msg).await { return; }
+		},
+		Err(broadcast::error::RecvError::Closed) => { return; },
+		Err(broadcast::error::RecvError::Lagged(msgs)) => {
+		    let mut missed_msgs: u64 = msgs;
+		    while missed_msgs > 0 {
+			match main_receiver.recv().await {	
+			    Ok(msg) => {
+				if let Err(_) = sender_cliente.send(msg).await { return; }
+				missed_msgs -= 1;
+			    },
+			    Err(broadcast::error::RecvError::Closed) => { return; },
+			    Err(broadcast::error::RecvError::Lagged(m)) => { missed_msgs += m; },
+			}
+		    }
+		},
+	    }
+	}
+    });
 }
 
 pub mod bitacora;
