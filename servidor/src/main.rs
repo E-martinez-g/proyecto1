@@ -344,6 +344,9 @@ async fn nuevo_usuario(nom: &String) {
  * `nom` - Un String que 
  */
 async fn desconecta(nom: &String) {
+    CLIENTES.write().await.remove(nom);
+    USUARIOS.write().await.remove(nom);
+    
     let clientes = CLIENTES.read().await;
     for (_, sender) in clientes.iter() {
 	if let Err(_) = sender.send(disconnected(nom)).await { continue; }
