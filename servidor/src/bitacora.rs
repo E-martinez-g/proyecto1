@@ -8,7 +8,9 @@ use std::io::Error;
  * # Argumentos
  *
  * `mensaje` - El mensaje recibido.
+ * <br>
  * `direccion` - La dirección IP desde la que se recibió el mensaje.
+ * <br>
  * `nombre` - Posiblemente, el nombre con el que se identificó el cliente en la
  *            dirección IP.
  */
@@ -25,7 +27,9 @@ pub fn recibido(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String
  * # Argumentos
  *
  * `mensaje` - El mensaje enviado.
+ * <br>
  * `direccion` - La dirección IP a la que se envió el mensaje.
+ * <br>
  * `nombre` - Posiblemente, el nombre con el que se identificó el cliente en la
  *            dirección IP.
  */
@@ -42,9 +46,6 @@ pub fn enviado(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String>
  * # Argumentos
  *
  * `error` - El error ocurrido.
- * `direccion` - Posiblemente, La dirección IP del cliente con el que ocurriò el error.
- * `nombre` - Posiblemente, el nombre con el que se identificó el cliente en la
- *            dirección IP.
  */
 pub fn error(e: ErrorServidor) {
     eprint!("** ERROR: \n\t");
@@ -76,7 +77,7 @@ pub fn error(e: ErrorServidor) {
  * Enumeración para los errores que pueden ocurrir
  */
 pub enum ErrorServidor{
-    Creacion { error:Error, direccion: String },
+    Creacion { error: Error, direccion: String },
     Aceptacion { error: Error },
     Recepcion { error: Error, direccion: SocketAddr, nombre: Option<String> },
     Envio {error: Error, direccion: SocketAddr, nombre: Option<String> },

@@ -11,7 +11,7 @@ use protocolo::EstadoUsuario::*;
 use protocolo::ClientType::*;
 use protocolo::*;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::option::Option;
 
 use bitacora::ErrorServidor::*;
@@ -27,7 +27,7 @@ type Clientes = HashMap<String, mpsc::Sender<String>>;
 static CLIENTES: LazyLock<RwLock<Clientes>> =
     LazyLock::new(|| {RwLock::new(HashMap::new())});
 
-type Cuartos = HashMap<String, broadcast::Sender<String>>;
+type Cuartos = HashMap<String, Cuarto>;
 static CUARTOS: LazyLock<RwLock<Cuartos>> =
     LazyLock::new(|| {RwLock::new(HashMap::new())});
 
@@ -69,13 +69,14 @@ async fn main() {
  * # Argumentos
  *
  * `ts` - El `TcpStream` para leer y escribir información del cliente.
+ * <br>
  * `d` - La dirección del cliente.
  */
 async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
     
-    let name: String = match espera_identificacion(&mut ts, &d).await {
+    let nom: String = match espera_identificacion(&mut ts, &d).await {
 	Ok(None) => return,
-	Ok( Some(u) ) => u,
+	Ok(Some(name)) => name,
 	Err( e @ Invalido{ direccion: d, nombre: None } ) => {
 	    bitacora::error(e);
 	    if let Err(e2) = envia(&d, &mut ts, None, response("INVALID", "INVALID")).await {
@@ -88,26 +89,66 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 	    return;
 	}
     };
-    USUARIOS.write().await.insert(name.clone(), ACTIVE);
+
+    nuevo_usuario(&nom).await;
+    
+    USUARIOS.write().await.insert(nom.clone(), ACTIVE);
 
     let (sender, mut receiver) = mpsc::channel::<String>(128);
-    CLIENTES.write().await.insert(name.clone(), sender);
+    CLIENTES.write().await.insert(nom.clone(), sender);
 
-    join_main_room(&name);
+    join_main_room(&nom).await;
     
     loop {
 	tokio::select!{
 	    recv = receiver.recv() => {
-		println!("Nada");
+		match recv {
+		    None => {
+			desconecta(&nom).await;
+			return;
+		    },
+		    Some(msg) => {
+			if let Err(e) = envia(&d, &mut ts, Some(&nom), msg).await {
+			    bitacora::error(e);
+			    desconecta(&nom).await;
+			    return;
+			}
+		    },
+		}
 	    }
-	    msg = recibe(&d, &mut ts, Some(&name)) => {
-		println!("Nadota");
+	    msg = recibe(&d, &mut ts, Some(&nom)) => {
+		match msg {
+		    Ok(None) => {
+			desconecta(&nom).await;
+			return;
+		    },
+		    Err(e) => {
+			bitacora::error(e);
+			desconecta(&nom).await;
+			return;
+		    },
+		    Ok(Some(rec)) => {
+			match parsea_mensaje_cliente(rec) {
+			    Err(_) => {
+				bitacora::error(Invalido{direccion: d, nombre: Some(nom.clone())});
+				if let Err(e2) = envia(&d, &mut ts, Some(&nom),
+						       response("INVALID", "INVALID")).await {
+				    bitacora::error(e2);
+				}
+				desconecta(&nom).await;
+				return;
+			    },
+			    Ok(ct) => {
+				if let Err(_) = maneja_solicitud(ct, &mut ts, &d, &nom).await {
+				    return;
+				}
+			    },
+			}
+		    },
+		}
 	    }
 	}
     }
-    
-    USUARIOS.write().await.remove(&name);
-    CLIENTES.write().await.remove(&name);
 }
 
 /**
@@ -117,6 +158,7 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
  * # Argumentos
  *
  * `ts` - El `TcpStream` para comunicarse con el cliente.
+ * <br>
  * `d` - La dirección IP del cliente.
  */
 async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
@@ -133,22 +175,22 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 	    Err(_) => return Err(Invalido{ direccion: *d,
 					   nombre: None }),
 	    
-	    Ok(Identify{ username: u }) => {
+	    Ok(Identify{ username: nom }) => {
 		
-		if USUARIOS.read().await.contains_key(&u) {
+		if USUARIOS.read().await.contains_key(&nom) {
 		    if let Err(e) = envia(d, ts, None, response_extra("IDENTIFY",
 								      "USER_ALREADY_EXISTS",
-								      &u)).await {
+								      &nom)).await {
 			return Err(e);
 		    }
 		    continue;
-		}		
-		if let Err(e) = envia(d, ts, Some(&u), response_extra("IDENTIFY",
+		}
+		if let Err(e) = envia(d, ts, Some(&nom), response_extra("IDENTIFY",
 								      "SUCCESS",
-								      &u)).await {
+								      &nom)).await {
 		    return Err(e);
 		}
-		return Ok(Some(u));
+		return Ok(Some(nom));
 	    },
 
 	    Ok(_) => {
@@ -168,9 +210,31 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
  *
  * `ct` - una instancia de `ClientType` asociada a la instrucción que se
  *        desea realizar y que contiene lo necesario para realizarla.
+ * <br>
+ * `ts` - El `TcpStream` para mandar mensajes al cliente.
+ * <br>
+ * `d` - La dirección ip del cliente.
+ * <br>
+ * `nom` - Un String con el nombre del cliente.
  */
-async fn maneja_solicitud(ct: ClientType) {
-    println!("NO HAY IMPLEMENTACIÓN DE NADA");
+async fn maneja_solicitud(ct: ClientType, ts: &mut TcpStream, d: &SocketAddr, nom: &String)
+			  -> Result<Option<String>, ErrorServidor> {
+    match ct {
+	Identify { username: u } => return Err(Reidentify { direccion: *d,
+							    nombre: nom.clone() }),
+	Status { status: eu } => {},
+	Users => {},
+	Text { username: u, text: t } => {},
+	PublicText { text: t } => {},
+	NewRoom { roomname: rn } => {},
+	Invite { roomname: rn, usernames: us } => {},
+	JoinRoom { roomname: rn } => {},
+	RoomUsers { roomname: rn } => {},
+	RoomText { roomname: rn, text: t } => {},
+	LeaveRoom { roomname: rn } => {},
+	Disconnect => {},
+    }
+    Ok(None)
 }
 
 /**
@@ -207,6 +271,91 @@ async fn join_main_room(nom: &String) {
 	    }
 	}
     });
+}
+
+/**
+ * Mete a un usuario a un cuarto, si este fue invitado.
+ *
+ * `rn` - Un String con el nombre del cuarto.
+ * `nom` - Un String con el nombre del usuario.
+ */
+async fn join_room(rn: &String, nom: &String) -> String {
+    let mut room_receiver;
+    match CUARTOS.read().await.get(rn) {
+	None => return response_extra("JOIN_ROOM", "NO_SUCH_ROOM", rn),
+	Some(room) => {
+	    if room.es_invitado(nom) {
+		let room_sender = room.sender();
+		room_receiver = room_sender.subscribe();
+	    } else {
+		return response_extra("JOIN_ROOM", "NOT_INVITED", rn);
+	    }
+	},
+    }
+    let sender_cliente = CLIENTES.read().await.get(nom).unwrap().clone();
+    let roomname = rn.clone();
+    let nombre = nom.clone();
+    tokio::spawn(async move {
+	loop {
+	    if !CUARTOS.read().await.get(&roomname).unwrap().es_miembro(&nombre) { return; }
+	    match room_receiver.recv().await {
+		Ok(msg) => {
+		    if let Err(_) = sender_cliente.send(msg).await { return; }
+		},
+		Err(broadcast::error::RecvError::Closed) => { return; },
+		Err(broadcast::error::RecvError::Lagged(msgs)) => {
+		    let mut missed_msgs: u64 = msgs;
+		    while missed_msgs > 0 {
+			match room_receiver.recv().await {	
+			    Ok(msg) => {
+				if let Err(_) = sender_cliente.send(msg).await { return; }
+				missed_msgs -= 1;
+			    },
+			    Err(broadcast::error::RecvError::Closed) => { return; },
+			    Err(broadcast::error::RecvError::Lagged(m)) => { missed_msgs += m; },
+			}
+		    }
+		},
+	    }
+	}
+    });
+    return response_extra("JOIN_ROOM", "SUCCESS", rn);
+}
+
+/**
+ * Avisa a todos los usuarios de la llegada de un nuevo usuario.
+ *
+ * # Argumentos
+ *
+ * `nom` - Un String con el nombre del usuario que se acaba de conectar.
+ */
+async fn nuevo_usuario(nom: &String) {
+    let clientes = CLIENTES.read().await;
+    for (_, sender) in clientes.iter() {
+	if let Err(_) = sender.send(new_user(nom)).await { continue; }
+    }
+}
+
+/**
+ * Desconecta al cliente del servidor y le avisa a todos los usuarios de esto.
+ *
+ * # Argumentos
+ *
+ * `nom` - Un String que 
+ */
+async fn desconecta(nom: &String) {
+    let clientes = CLIENTES.read().await;
+    for (_, sender) in clientes.iter() {
+	if let Err(_) = sender.send(disconnected(nom)).await { continue; }
+    }
+
+    let mut cuartos = CUARTOS.write().await;
+    for (rn, cuarto) in cuartos.iter_mut() {
+	if cuarto.es_miembro(nom) {
+	    cuarto.salio(nom);
+	    if let Err(_) = cuarto.send(left_room(rn, nom)).await { continue; }
+	}
+    } 
 }
 
 pub mod bitacora;
