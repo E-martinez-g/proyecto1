@@ -13,7 +13,7 @@ use std::collections::HashMap;
  */
 pub fn server_address() -> String {
     let ip = args().nth(1).unwrap_or_default()
-	     .parse::<IpAddr>().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+	     .parse::<IpAddr>().unwrap_or(IpAddr::V4(Ipv4Addr::new(0,0,0,0)));
     
     let mut port = args().nth(2).unwrap_or_default()
 	           .parse::<u16>().unwrap_or_default();
