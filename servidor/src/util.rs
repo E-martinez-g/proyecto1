@@ -62,7 +62,7 @@ pub async fn recibe(d: &SocketAddr, ts: &mut TcpStream, nom: Option<&String>)
     };
 
     let rec = String::from_utf8_lossy(&buffer[..n]).to_string();
-    recibido(&rec, d, None);
+    recibido(&rec, d, nom);
 
     Ok(Some(rec))
 }
