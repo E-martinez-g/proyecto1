@@ -262,8 +262,9 @@ async fn maneja_solicitud(ct: ClientType, d: &SocketAddr, nom: &String)
 
 	RoomText { roomname: rn, text: t } => return Ok(mensaje_cuarto(rn, t, nom).await),
 
-	LeaveRoom { roomname: rn } => return Ok(abandonar_cuarto(rn, nom).await),
-
+	LeaveRoom { roomname: rn } => {
+	    return Ok(abandonar_cuarto(rn, nom).await);
+	},
 	Disconnect => {
 	    desconecta(nom).await;
 	    return Err(Desconectado); 
@@ -318,7 +319,9 @@ async fn join_main_room(nom: &String) {
 async fn join_room(rn: &String, nom: &String) -> String {
     let mut room_receiver;
     match CUARTOS.write().await.get_mut(rn) {
-	None => return response_extra("JOIN_ROOM", "NO_SUCH_ROOM", rn),
+	None => {
+	    return response_extra("JOIN_ROOM", "NO_SUCH_ROOM", rn);
+	},
 	Some(room) => {
 	    if room.es_invitado(nom) {
 		room.se_unio(nom.clone());
@@ -335,12 +338,21 @@ async fn join_room(rn: &String, nom: &String) -> String {
     let nombre = nom.clone();
     tokio::spawn(async move {
 	loop {
-	    if !CUARTOS.read().await.get(&roomname).unwrap().es_miembro(&nombre) { break; }
+	    match CUARTOS.read().await.get(&roomname) {
+		None => {
+		    break;
+		},
+		Some(room) => {
+		    if !room.es_miembro(&nombre) { break; }
+		},
+	    }
 	    match room_receiver.recv().await {
 		Ok(msg) => {
 		    if let Err(_) = sender_cliente.send(msg).await { break; }
 		},
-		Err(broadcast::error::RecvError::Closed) => { break; },
+		Err(broadcast::error::RecvError::Closed) => {
+		    break;
+		},
 		Err(broadcast::error::RecvError::Lagged(msgs)) => {
 		    let mut missed_msgs: u64 = msgs;
 		    while missed_msgs > 0 {
@@ -349,8 +361,12 @@ async fn join_room(rn: &String, nom: &String) -> String {
 				if let Err(_) = sender_cliente.send(msg).await { break; }
 				missed_msgs -= 1;
 			    },
-			    Err(broadcast::error::RecvError::Closed) => { break; },
-			    Err(broadcast::error::RecvError::Lagged(m)) => { missed_msgs += m; },
+			    Err(broadcast::error::RecvError::Closed) => {
+				break;
+			    },
+			    Err(broadcast::error::RecvError::Lagged(m)) => {
+				missed_msgs += m;
+			    },
 			}
 		    }
 		},
@@ -518,21 +534,26 @@ async fn mensaje_cuarto(rn: String, msg: String, nom: &String) -> Option<String>
  * `nom` - El nombre del usuario que desea abandonar el cuarto.
  */
 async fn abandonar_cuarto(rn: String, nom: &String) -> Option<String> {
+    let mut cuarto_vacio: bool = false;
     match CUARTOS.write().await.get_mut(&rn) {
-	None => return Some(response_extra("LEAVE_ROOM", "NO_SUCH_ROOM", &rn)),
+	None => {
+	    return Some(response_extra("LEAVE_ROOM", "NO_SUCH_ROOM", &rn));
+	},
 	Some(room) => {
 	    if !room.es_miembro(nom) {
 		return Some(response_extra("LEAVE_ROOM", "NOT_JOINED", &rn));
 	    }
 	    room.salio(nom);
 	    if room.miembros().is_empty() {
-		CUARTOS.write().await.remove(&rn);
-	    } else {
-		if let Err(_) = room.send(left_room(&rn, nom)).await {
-		    CUARTOS.write().await.remove(&rn);
-		}
+		cuarto_vacio = true;
 	    }
-	}
+	    if let Err(_) = room.send(left_room(&rn, nom)).await {
+		cuarto_vacio = true;
+	    }
+	},
+    }
+    if cuarto_vacio {
+	CUARTOS.write().await.remove(&rn);
     }
     None
 }
