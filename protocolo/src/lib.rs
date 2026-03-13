@@ -103,6 +103,9 @@ pub enum ServerType {
     
     #[serde(rename = "PUBLIC_TEXT_FROM")]
     PublicTextFrom { username: String, text: String },
+
+    #[serde(rename = "INVITATION")]
+    Invitation{ username: String, roomname: String },
     
     #[serde(rename = "JOINED_ROOM")]
     JoinedRoom { roomname: String, username: String },

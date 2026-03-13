@@ -69,6 +69,7 @@ pub fn error(e: ErrorServidor) {
 	    eprintln!("El mensaje enviado por {} ({}) fue inválido.", d, n),
 	ErrorServidor::Invalido { direccion: d, nombre: None } =>
 	    eprintln!("El mensaje enviado por {} fue inválido.", d),
+	_ => {},
     }
     eprint!("\n");
 }
@@ -83,4 +84,5 @@ pub enum ErrorServidor{
     Envio {error: Error, direccion: SocketAddr, nombre: Option<String> },
     Reidentify { direccion: SocketAddr, nombre: String },
     Invalido { direccion: SocketAddr, nombre: Option<String> },
+    Desconectado,
 }

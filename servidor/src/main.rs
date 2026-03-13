@@ -205,8 +205,7 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 
 /**
  * Realiza las acciones acorde a la solicitud del cliente.
- *
- * # Argumentos
+ * * # Argumentos
  *
  * `ct` - una instancia de `ClientType` asociada a la instrucción que se
  *        desea realizar y que contiene lo necesario para realizarla.
@@ -222,17 +221,30 @@ async fn maneja_solicitud(ct: ClientType, ts: &mut TcpStream, d: &SocketAddr, no
     match ct {
 	Identify { username: u } => return Err(Reidentify { direccion: *d,
 							    nombre: nom.clone() }),
-	Status { status: eu } => {},
-	Users => {},
-	Text { username: u, text: t } => {},
-	PublicText { text: t } => {},
-	NewRoom { roomname: rn } => {},
-	Invite { roomname: rn, usernames: us } => {},
-	JoinRoom { roomname: rn } => {},
-	RoomUsers { roomname: rn } => {},
-	RoomText { roomname: rn, text: t } => {},
-	LeaveRoom { roomname: rn } => {},
-	Disconnect => {},
+	Status { status: eu } => { MAINROOM.read().await.send(new_status(nom, &eu)); },
+	
+	Users => return Ok(Some(user_list(&*USUARIOS.read().await))),
+	
+	Text { username: u, text: t } => return Ok(mensaje_privado(u, t, nom).await),
+	
+	PublicText { text: t } => { MAINROOM.read().await.send(public_text_from(nom, t)); },
+
+	NewRoom { roomname: rn } => return Ok(Some(crea_cuarto(rn, nom).await)),
+
+	Invite { roomname: rn, usernames: us } => return Ok(invitaciones(us, rn, nom)),
+
+	JoinRoom { roomname: rn } => return Ok(join_room(rn, nom)),
+
+	RoomUsers { roomname: rn } => return Ok(usuarios_cuarto(rn, nom)),
+
+	RoomText { roomname: rn, text: t } => return Ok(mensaje_cuarto(rn, t, nom)),
+
+	LeaveRoom { roomname: rn } => return Ok(abandonar_cuarto(rn, nom)),
+
+	Disconnect => {
+	    desconecta(nom);
+	    return Err(Desconectado); 
+	},
     }
     Ok(None)
 }
@@ -279,12 +291,13 @@ async fn join_main_room(nom: &String) {
  * `rn` - Un String con el nombre del cuarto.
  * `nom` - Un String con el nombre del usuario.
  */
-async fn join_room(rn: &String, nom: &String) -> String {
+async fn join_room(rn: String, nom: &String) -> String {
     let mut room_receiver;
     match CUARTOS.read().await.get(rn) {
 	None => return response_extra("JOIN_ROOM", "NO_SUCH_ROOM", rn),
 	Some(room) => {
 	    if room.es_invitado(nom) {
+		room.se_unio(nom);
 		let room_sender = room.sender();
 		room_receiver = room_sender.subscribe();
 	    } else {
@@ -292,31 +305,35 @@ async fn join_room(rn: &String, nom: &String) -> String {
 	    }
 	},
     }
+    
     let sender_cliente = CLIENTES.read().await.get(nom).unwrap().clone();
     let roomname = rn.clone();
     let nombre = nom.clone();
     tokio::spawn(async move {
 	loop {
-	    if !CUARTOS.read().await.get(&roomname).unwrap().es_miembro(&nombre) { return; }
+	    if !CUARTOS.read().await.get(&roomname).unwrap().es_miembro(&nombre) { break; }
 	    match room_receiver.recv().await {
 		Ok(msg) => {
-		    if let Err(_) = sender_cliente.send(msg).await { return; }
+		    if let Err(_) = sender_cliente.send(msg).await { break; }
 		},
-		Err(broadcast::error::RecvError::Closed) => { return; },
+		Err(broadcast::error::RecvError::Closed) => { break; },
 		Err(broadcast::error::RecvError::Lagged(msgs)) => {
 		    let mut missed_msgs: u64 = msgs;
 		    while missed_msgs > 0 {
 			match room_receiver.recv().await {	
 			    Ok(msg) => {
-				if let Err(_) = sender_cliente.send(msg).await { return; }
+				if let Err(_) = sender_cliente.send(msg).await { break; }
 				missed_msgs -= 1;
 			    },
-			    Err(broadcast::error::RecvError::Closed) => { return; },
+			    Err(broadcast::error::RecvError::Closed) => { break; },
 			    Err(broadcast::error::RecvError::Lagged(m)) => { missed_msgs += m; },
 			}
 		    }
 		},
 	    }
+	}
+	if let Some(room) = CUARTOS.read().await.get(&roomname) {
+	    room.salio(&nombre);
 	}
     });
     return response_extra("JOIN_ROOM", "SUCCESS", rn);
@@ -334,6 +351,65 @@ async fn nuevo_usuario(nom: &String) {
     for (_, sender) in clientes.iter() {
 	if let Err(_) = sender.send(new_user(nom)).await { continue; }
     }
+}
+
+/**
+ * Envía un mensaje privado a un usuario seleccionado.
+ *
+ * # Argumentos
+ *
+ * `des` - El nombre del usuario al que se quiere mandar el mensaje.
+ * `msg` - El mensaje que se desea enviar al usuario.
+ * `ori` - El nombre del usuario que envía el mensaje.
+ */
+async fn mensaje_privado(des: String, msg: String, ori: &String) -> Option<String> {
+    match CLIENTES.read().await.get(des) {
+	None => return Some(response_extra("TEXT", "NO_SUCH_USER", &des)),
+	Some(sender) => {
+	    if let Err(_) = sender.send(text_from(ori, msg)).await {
+		return Some(response_extra("TEXT", "NO_SUCH_USER", &des));
+	    }
+	}
+    }
+    None
+}
+
+/**
+ * Crea un nuevo cuarto y mete al usuario que lo creó a sí mismo.
+ *
+ * # Argumentos
+ *
+ * `room` - El nombre del cuarto que se quiere crear.
+ * `nom` - El nombre del usuario que quiere crear el cuarto.
+ */
+async fn crea_cuarto(room: String, nom: &String) -> String {
+    if let Some(_) = CUARTOS.read().await.get(&room) {
+	return response_extra("NEW_ROOM", "ROOM_ALREADY_EXISTS", &room);
+    }
+    let nuevo_cuarto = Cuarto::new();
+    nuevo_cuarto.invita(nom);
+    CUARTOS.write().await.insert(room, nuevo_cuarto);
+    join_room(room, nom).await;
+    response_extra("NEW_ROOM", "SUCCESS", &room)
+}
+
+/**
+ * 
+ */
+async fn invitaciones(us: Vec<String>, rn: String, nom: &String) -> Option<String> {
+    if let None = CUARTOS.read().await.get(&rn) {
+	return Some(response_extra("INVITE", "NO_SUCH_ROOM", rn));
+    }
+    let _own_sender = CLIENTES.read().await.get(nom).unwrap();
+    for user in us {
+	match CLIENTES.read().await.get(&user) {
+	    None => {
+		_own_sender.send(response_extra("INVITE", "NO_SUCH_USER", &user))
+	    },
+	    Some(sender) => { sender.send(invitation(nom, &rn)).await; }, 
+	}
+    }
+    None
 }
 
 /**

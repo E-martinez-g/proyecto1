@@ -89,6 +89,14 @@ pub struct Cuarto {
 impl Cuarto {
 
     /**
+     * Crea una instancia de un cuarto.
+     */ 
+    pub fn new() -> Self {
+	Cuarto { sender: broadcast::channel::<String>(128),
+		 invitados: HashSet::new(), miembros: HashSet::new() }
+    }
+
+    /**
      * Utiliza el `Sender` del cuarto para enviar un mensaje a todos los miembros.
      *
      * # Argumentos

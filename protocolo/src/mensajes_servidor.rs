@@ -91,7 +91,7 @@ pub fn new_status(usr: &String, sta: &super::EstadoUsuario) -> String {
  *          usuario y valores que son su estado
  *          correspondiente.
  */
-pub fn user_list(usrs: &HashMap<String, String>) -> String {
+pub fn user_list(usrs: &HashMap<String, super::EstadoUsuario>) -> String {
     json!({
 	"type": "USER_LIST",
 	"users": usrs
@@ -131,6 +131,24 @@ pub fn public_text_from(usr: &String, msg: String) -> String {
 	"type": "PUBLIC_TEXT_FROM",
 	"username": usr,
 	"text": msg
+    }).to_string() + "\n"
+}
+
+/**
+ * Crea un mensaje del tipo "INVITATION".
+ *
+ * # Argumentos
+ *
+ * `usr` - El nombre del usuario que se
+ *         quiere invitar.
+ * `room` - El nombre del cuarto al que se 
+ *          quiere invitar.
+ */
+pub fn invitation(usr: &String, room: &String) -> String {
+    json!({
+	"type": "INVITATION",
+	"username": usr,
+	"roomname": room
     }).to_string() + "\n"
 }
 
