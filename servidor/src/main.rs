@@ -4,14 +4,12 @@ use tokio::sync::{RwLock, broadcast, mpsc};
 use std::net::SocketAddr;
 use tokio::net::{TcpStream, TcpListener};
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
 use protocolo::mensajes_servidor::*;
 use protocolo::EstadoUsuario::*;
 use protocolo::ClientType::*;
 use protocolo::*;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::option::Option;
 
 use bitacora::ErrorServidor::*;
@@ -139,8 +137,30 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 				return;
 			    },
 			    Ok(ct) => {
-				if let Err(_) = maneja_solicitud(ct, &mut ts, &d, &nom).await {
-				    return;
+				match maneja_solicitud(ct, &d, &nom).await {
+				    Ok(None) => {},
+				    Ok(Some(s)) => {
+					if let Err(e) = envia(&d, &mut ts, Some(&nom), s).await {
+					    bitacora::error(e);
+					    desconecta(&nom).await;
+					    return;
+					}
+				    },
+				    Err(Desconectado) => return,
+				    Err(e @ Invalido{..}) => {
+					bitacora::error(e);
+					if let Err(e2) = envia(&d, &mut ts, Some(&nom),
+							       response("INVALID", "INVALID")).await {
+					    bitacora::error(e2);
+					}
+					desconecta(&nom).await;
+					return;
+				    },
+				    Err(e) => {
+					bitacora::error(e);
+					desconecta(&nom).await;
+					return;
+				    },
 				}
 			    },
 			}
@@ -210,39 +230,41 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
  * `ct` - una instancia de `ClientType` asociada a la instrucción que se
  *        desea realizar y que contiene lo necesario para realizarla.
  * <br>
- * `ts` - El `TcpStream` para mandar mensajes al cliente.
- * <br>
  * `d` - La dirección ip del cliente.
  * <br>
  * `nom` - Un String con el nombre del cliente.
  */
-async fn maneja_solicitud(ct: ClientType, ts: &mut TcpStream, d: &SocketAddr, nom: &String)
+async fn maneja_solicitud(ct: ClientType, d: &SocketAddr, nom: &String)
 			  -> Result<Option<String>, ErrorServidor> {
     match ct {
-	Identify { username: u } => return Err(Reidentify { direccion: *d,
+	Identify { .. } => return Err(Reidentify { direccion: *d,
 							    nombre: nom.clone() }),
-	Status { status: eu } => { MAINROOM.read().await.send(new_status(nom, &eu)); },
+	Status { status: eu } => {
+	    let _ = MAINROOM.read().await.send(new_status(nom, &eu));
+	},
 	
 	Users => return Ok(Some(user_list(&*USUARIOS.read().await))),
 	
 	Text { username: u, text: t } => return Ok(mensaje_privado(u, t, nom).await),
 	
-	PublicText { text: t } => { MAINROOM.read().await.send(public_text_from(nom, t)); },
+	PublicText { text: t } => {
+	    let _ = MAINROOM.read().await.send(public_text_from(nom, t));
+	},
 
 	NewRoom { roomname: rn } => return Ok(Some(crea_cuarto(rn, nom).await)),
 
-	Invite { roomname: rn, usernames: us } => return Ok(invitaciones(us, rn, nom)),
+	Invite { roomname: rn, usernames: us } => return Ok(invitaciones(us, rn, nom).await),
 
-	JoinRoom { roomname: rn } => return Ok(join_room(rn, nom)),
+	JoinRoom { roomname: rn } => return Ok(Some(join_room(&rn, nom).await)),
 
-	RoomUsers { roomname: rn } => return Ok(usuarios_cuarto(rn, nom)),
+	RoomUsers { roomname: rn } => return Ok(Some(usuarios_cuarto(rn, nom).await)),
 
-	RoomText { roomname: rn, text: t } => return Ok(mensaje_cuarto(rn, t, nom)),
+	RoomText { roomname: rn, text: t } => return Ok(Some(mensaje_cuarto(rn, t, nom).await)),
 
-	LeaveRoom { roomname: rn } => return Ok(abandonar_cuarto(rn, nom)),
+	LeaveRoom { roomname: rn } => return Ok(Some(abandonar_cuarto(rn, nom).await)),
 
 	Disconnect => {
-	    desconecta(nom);
+	    desconecta(nom).await;
 	    return Err(Desconectado); 
 	},
     }
@@ -289,15 +311,16 @@ async fn join_main_room(nom: &String) {
  * Mete a un usuario a un cuarto, si este fue invitado.
  *
  * `rn` - Un String con el nombre del cuarto.
+ * <br>
  * `nom` - Un String con el nombre del usuario.
  */
-async fn join_room(rn: String, nom: &String) -> String {
+async fn join_room(rn: &String, nom: &String) -> String {
     let mut room_receiver;
-    match CUARTOS.read().await.get(rn) {
+    match CUARTOS.write().await.get_mut(rn) {
 	None => return response_extra("JOIN_ROOM", "NO_SUCH_ROOM", rn),
 	Some(room) => {
 	    if room.es_invitado(nom) {
-		room.se_unio(nom);
+		room.se_unio(nom.clone());
 		let room_sender = room.sender();
 		room_receiver = room_sender.subscribe();
 	    } else {
@@ -332,11 +355,11 @@ async fn join_room(rn: String, nom: &String) -> String {
 		},
 	    }
 	}
-	if let Some(room) = CUARTOS.read().await.get(&roomname) {
+	if let Some(room) = CUARTOS.write().await.get_mut(&roomname) {
 	    room.salio(&nombre);
 	}
     });
-    return response_extra("JOIN_ROOM", "SUCCESS", rn);
+    return response_extra("JOIN_ROOM", "SUCCESS", &rn);
 }
 
 /**
@@ -359,11 +382,13 @@ async fn nuevo_usuario(nom: &String) {
  * # Argumentos
  *
  * `des` - El nombre del usuario al que se quiere mandar el mensaje.
+ * <br>
  * `msg` - El mensaje que se desea enviar al usuario.
+ * <br>
  * `ori` - El nombre del usuario que envía el mensaje.
  */
 async fn mensaje_privado(des: String, msg: String, ori: &String) -> Option<String> {
-    match CLIENTES.read().await.get(des) {
+    match CLIENTES.read().await.get(&des) {
 	None => return Some(response_extra("TEXT", "NO_SUCH_USER", &des)),
 	Some(sender) => {
 	    if let Err(_) = sender.send(text_from(ori, msg)).await {
@@ -380,36 +405,103 @@ async fn mensaje_privado(des: String, msg: String, ori: &String) -> Option<Strin
  * # Argumentos
  *
  * `room` - El nombre del cuarto que se quiere crear.
+ * <br>
  * `nom` - El nombre del usuario que quiere crear el cuarto.
  */
 async fn crea_cuarto(room: String, nom: &String) -> String {
     if let Some(_) = CUARTOS.read().await.get(&room) {
 	return response_extra("NEW_ROOM", "ROOM_ALREADY_EXISTS", &room);
     }
-    let nuevo_cuarto = Cuarto::new();
-    nuevo_cuarto.invita(nom);
-    CUARTOS.write().await.insert(room, nuevo_cuarto);
-    join_room(room, nom).await;
+    let mut nuevo_cuarto = Cuarto::new();
+    nuevo_cuarto.invita(nom.clone());
+    CUARTOS.write().await.insert(room.clone(), nuevo_cuarto);
+    join_room(&room, nom).await;
     response_extra("NEW_ROOM", "SUCCESS", &room)
 }
 
 /**
+ * Invita a una lista de usuarios a unirse a un cuarto.
+ *
+ * # Argumentos
  * 
+ * `us` - El `Vec` que contiene los nombres de las personas a invitar.
+ * <br>
+ * `rn` - El nombre del cuarto para el que son las invitaciones.
+ * <br>
+ * `nom` - El nombre del usuario que realiza la invitación.
  */
 async fn invitaciones(us: Vec<String>, rn: String, nom: &String) -> Option<String> {
     if let None = CUARTOS.read().await.get(&rn) {
-	return Some(response_extra("INVITE", "NO_SUCH_ROOM", rn));
+	return Some(response_extra("INVITE", "NO_SUCH_ROOM", &rn));
     }
-    let _own_sender = CLIENTES.read().await.get(nom).unwrap();
+    let clientes = CLIENTES.read().await;
+    let _own_sender = clientes.get(nom).unwrap();
     for user in us {
 	match CLIENTES.read().await.get(&user) {
 	    None => {
-		_own_sender.send(response_extra("INVITE", "NO_SUCH_USER", &user))
+		let _ = _own_sender.send(response_extra("INVITE", "NO_SUCH_USER",
+						&user)).await;
 	    },
-	    Some(sender) => { sender.send(invitation(nom, &rn)).await; }, 
+	    Some(sender) => {
+		if let Err(_) = sender.send(invitation(nom, &rn)).await { continue; }
+	    },
 	}
     }
     None
+}
+
+/**
+ * Obtiene una lista de los usuarios del cuarto solicitado.
+ *
+ * # Argumentos
+ *
+ * `rn` - El nombre del cuarto del que se requiere la lista de miembros.
+ * <br>
+ * `nom` - El nombre de la persona que está pidiendo la lista.
+ */
+async fn usuarios_cuarto(rn: String, nom: &String) -> String {
+    match CUARTOS.read().await.get(&rn) {
+	None => return response_extra("ROOM_USERS", "NO_SUCH_ROOM", &rn),
+	Some(room) => {
+	    if !room.es_miembro(nom) {
+		return response_extra("ROOM_USERS", "NOT_JOINED", &rn);
+	    }
+	    let mut mapa_miembros = HashMap::new();
+	    for user in room.miembros() {
+		mapa_miembros.insert(user.clone(),
+				     USUARIOS.read().await.get(user).unwrap().clone());
+	    }
+	    return room_user_list(&rn, mapa_miembros);
+	},
+    }
+}
+
+/**
+ * Envía un mensaje a todos los integrantes de un cuarto.
+ *
+ * # Argumentos
+ *
+ * `rn` - El nombre del cuarto al que se quiere enviar el mensaje.
+ * <br>
+ * `msg` - El mensaje que se quiere enviar al cuarto.
+ * <br>
+ * `nom` - El nombre del usuario que quiere mandar el mensaje.
+ */
+async fn mensaje_cuarto(rn: String, msg: String, nom: &String) -> String {
+    "".to_string()
+}
+
+/**
+ * Permite a un usuario abandonar un cuarto.
+ *
+ * # Argumentos
+ *
+ * `rn` - El nombre del cuarto que el usuario desea abandonar.
+ * <br>
+ * `nom` - El nombre del usuario que desea abandonar el cuarto.
+ */
+async fn abandonar_cuarto(rn: String, nom: &String) -> String {
+    "".to_string()
 }
 
 /**
@@ -417,7 +509,7 @@ async fn invitaciones(us: Vec<String>, rn: String, nom: &String) -> Option<Strin
  *
  * # Argumentos
  *
- * `nom` - Un String que 
+ * `nom` - Un String que contiene el nombre del cliente a desconectar.
  */
 async fn desconecta(nom: &String) {
     CLIENTES.write().await.remove(nom);

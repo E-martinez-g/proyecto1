@@ -92,7 +92,7 @@ impl Cuarto {
      * Crea una instancia de un cuarto.
      */ 
     pub fn new() -> Self {
-	Cuarto { sender: broadcast::channel::<String>(128),
+	Cuarto { sender: broadcast::channel::<String>(128).0,
 		 invitados: HashSet::new(), miembros: HashSet::new() }
     }
 
@@ -105,6 +105,13 @@ impl Cuarto {
      */
     pub async fn send(&mut self, msg: String) -> Result<usize, SendError<String>> {
 	self.sender.send(msg)
+    }
+
+    /**
+     * Regresa una referencia al conjunto de miembros del cuarto.
+     */
+    pub fn miembros(&self) -> &HashSet<String> {
+	&self.miembros
     }
 
     /**

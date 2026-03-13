@@ -1,4 +1,5 @@
 use serde_json::json;
+use super::EstadoUsuario;
 use std::collections::HashMap;
 
 /**
@@ -186,7 +187,7 @@ pub fn joined_room(room: &String, usr: &String) -> String {
  *          estado correspondiente.
  */
 pub fn room_user_list(room: &String,
-		      usrs: &HashMap<String, String>) -> String {
+		      usrs: HashMap<String, EstadoUsuario>) -> String {
     json!({
 	"type": "ROOM_USER_LIST",
 	"roomname": room,

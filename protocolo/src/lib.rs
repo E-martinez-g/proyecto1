@@ -25,7 +25,7 @@ pub fn server_address() -> String {
 /**
  * Enumeración para el estado de los usuarios.
  */
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum EstadoUsuario {
     ACTIVE,
     AWAY,
