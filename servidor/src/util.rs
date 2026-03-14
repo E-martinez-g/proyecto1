@@ -6,8 +6,6 @@ use super::bitacora::ErrorServidor::*;
 use super::bitacora::*;
 
 use tokio::net::TcpStream;
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::error::SendError;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 
 /**
@@ -81,7 +79,6 @@ pub async fn recibe(d: &SocketAddr, ts: &mut TcpStream, nom: Option<&String>)
  *              unido al cuarto.
  */
 pub struct Cuarto {
-    sender: broadcast::Sender<String>,
     invitados: HashSet<String>,
     miembros: HashSet<String>,
 }
@@ -92,19 +89,7 @@ impl Cuarto {
      * Crea una instancia de un cuarto.
      */ 
     pub fn new() -> Self {
-	Cuarto { sender: broadcast::channel::<String>(128).0,
-		 invitados: HashSet::new(), miembros: HashSet::new() }
-    }
-
-    /**
-     * Utiliza el `Sender` del cuarto para enviar un mensaje a todos los miembros.
-     *
-     * # Argumentos
-     *
-     * `msg` - El mensaje a enviar.
-     */
-    pub async fn send(&mut self, msg: String) -> Result<usize, SendError<String>> {
-	self.sender.send(msg)
+	Cuarto { invitados: HashSet::new(), miembros: HashSet::new() }
     }
 
     /**
@@ -112,13 +97,6 @@ impl Cuarto {
      */
     pub fn miembros(&self) -> &HashSet<String> {
 	&self.miembros
-    }
-
-    /**
-     * Regresa el un clon del `Sender` para poder suscribirse a él (unirse al cuarto).
-     */    
-    pub fn sender(&self) -> broadcast::Sender<String> {
-	self.sender.clone()
     }
 
     /**

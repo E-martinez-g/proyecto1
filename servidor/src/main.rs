@@ -1,5 +1,5 @@
 use std::sync::LazyLock;
-use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::sync::{RwLock, mpsc};
 
 use std::net::SocketAddr;
 use tokio::net::{TcpStream, TcpListener};
@@ -28,9 +28,6 @@ static CLIENTES: LazyLock<RwLock<Clientes>> =
 type Cuartos = HashMap<String, Cuarto>;
 static CUARTOS: LazyLock<RwLock<Cuartos>> =
     LazyLock::new(|| {RwLock::new(HashMap::new())});
-
-static MAINROOM: LazyLock<RwLock<broadcast::Sender<String>>> =
-    LazyLock::new(|| {RwLock::new(broadcast::channel::<String>(256).0)});
 
 /**
  * Crea el servidor y acepta clientes.
@@ -94,8 +91,6 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 
     let (sender, mut receiver) = mpsc::channel::<String>(128);
     CLIENTES.write().await.insert(nom.clone(), sender);
-
-    join_main_room(&nom).await;
     
     loop {
 	tokio::select!{
@@ -241,16 +236,14 @@ async fn maneja_solicitud(ct: ClientType, d: &SocketAddr, nom: &String)
 							    nombre: nom.clone() }),
 	Status { status: eu } => {
 	    USUARIOS.write().await.insert(nom.clone(), eu.clone());
-	    let _ = MAINROOM.read().await.send(new_status(nom, &eu));
+	    todos_menos(new_status(nom, &eu), nom).await;
 	},
 	
 	Users => return Ok(Some(user_list(&*USUARIOS.read().await))),
 	
 	Text { username: u, text: t } => return Ok(mensaje_privado(u, t, nom).await),
 	
-	PublicText { text: t } => {
-	    let _ = MAINROOM.read().await.send(public_text_from(nom, t));
-	},
+	PublicText { text: t } => { todos_menos(public_text_from(nom, t), nom).await; },
 
 	NewRoom { roomname: rn } => return Ok(Some(crea_cuarto(rn, nom).await)),
 
@@ -265,48 +258,13 @@ async fn maneja_solicitud(ct: ClientType, d: &SocketAddr, nom: &String)
 	LeaveRoom { roomname: rn } => {
 	    return Ok(abandonar_cuarto(rn, nom).await);
 	},
+	
 	Disconnect => {
 	    desconecta(nom).await;
 	    return Err(Desconectado); 
 	},
     }
     Ok(None)
-}
-
-/**
- * Mete al usuario al cuarto principal.
- *
- * # Argumentos
- *
- * `nom` - Un String que contiene el nombre del usuario.
- */
-async fn join_main_room(nom: &String) {
-    let main_sender = MAINROOM.read().await.clone();
-    let mut main_receiver = main_sender.subscribe();
-    let sender_cliente = CLIENTES.read().await.get(nom).unwrap().clone();
-    tokio::spawn(async move {
-	loop {
-	    match main_receiver.recv().await {
-		Ok(msg) => {
-		    if let Err(_) = sender_cliente.send(msg).await { return; }
-		},
-		Err(broadcast::error::RecvError::Closed) => { return; },
-		Err(broadcast::error::RecvError::Lagged(msgs)) => {
-		    let mut missed_msgs: u64 = msgs;
-		    while missed_msgs > 0 {
-			match main_receiver.recv().await {	
-			    Ok(msg) => {
-				if let Err(_) = sender_cliente.send(msg).await { return; }
-				missed_msgs -= 1;
-			    },
-			    Err(broadcast::error::RecvError::Closed) => { return; },
-			    Err(broadcast::error::RecvError::Lagged(m)) => { missed_msgs += m; },
-			}
-		    }
-		},
-	    }
-	}
-    });
 }
 
 /**
@@ -317,66 +275,19 @@ async fn join_main_room(nom: &String) {
  * `nom` - Un String con el nombre del usuario.
  */
 async fn join_room(rn: &String, nom: &String) -> String {
-    let mut room_receiver;
     match CUARTOS.write().await.get_mut(rn) {
 	None => {
 	    return response_extra("JOIN_ROOM", "NO_SUCH_ROOM", rn);
 	},
 	Some(room) => {
-	    if room.es_invitado(nom) {
-		room.se_unio(nom.clone());
-		let room_sender = room.sender();
-		room_receiver = room_sender.subscribe();
-	    } else {
+	    if !room.es_invitado(nom) {
 		return response_extra("JOIN_ROOM", "NOT_INVITED", rn);
+	    } else {
+		room.se_unio(nom.clone());
 	    }
 	},
     }
-    
-    let sender_cliente = CLIENTES.read().await.get(nom).unwrap().clone();
-    let roomname = rn.clone();
-    let nombre = nom.clone();
-    tokio::spawn(async move {
-	loop {
-	    match CUARTOS.read().await.get(&roomname) {
-		None => {
-		    break;
-		},
-		Some(room) => {
-		    if !room.es_miembro(&nombre) { break; }
-		},
-	    }
-	    match room_receiver.recv().await {
-		Ok(msg) => {
-		    if let Err(_) = sender_cliente.send(msg).await { break; }
-		},
-		Err(broadcast::error::RecvError::Closed) => {
-		    break;
-		},
-		Err(broadcast::error::RecvError::Lagged(msgs)) => {
-		    let mut missed_msgs: u64 = msgs;
-		    while missed_msgs > 0 {
-			match room_receiver.recv().await {	
-			    Ok(msg) => {
-				if let Err(_) = sender_cliente.send(msg).await { break; }
-				missed_msgs -= 1;
-			    },
-			    Err(broadcast::error::RecvError::Closed) => {
-				break;
-			    },
-			    Err(broadcast::error::RecvError::Lagged(m)) => {
-				missed_msgs += m;
-			    },
-			}
-		    }
-		},
-	    }
-	}
-	if let Some(room) = CUARTOS.write().await.get_mut(&roomname) {
-	    room.salio(&nombre);
-	}
-    });
-    return response_extra("JOIN_ROOM", "SUCCESS", &rn);
+    response_extra("JOIN_ROOM", "SUCCESS", &rn)
 }
 
 /**
@@ -455,13 +366,16 @@ async fn invitaciones(us: Vec<String>, rn: String, nom: &String) -> Option<Strin
 	    let clientes = CLIENTES.read().await;
 	    let own_sender = clientes.get(nom).unwrap();
 	    for user in us {
+		if &user == nom ||
+		   room.es_invitado(&user) ||
+		   room.es_miembro(&user) { continue; }
+		
 		match CLIENTES.read().await.get(&user) {
 		    None => {
 			let _ = own_sender.send(response_extra("INVITE", "NO_SUCH_USER",
-								&user)).await;
+							       &user)).await;
 		    },
 		    Some(sender) => {
-			if room.es_invitado(&user) || room.es_miembro(&user) { continue; }
 			if let Err(_) = sender.send(invitation(nom, &rn)).await { continue; }
 			room.invita(user);
 		    }
@@ -516,12 +430,10 @@ async fn mensaje_cuarto(rn: String, msg: String, nom: &String) -> Option<String>
 	    if !room.es_miembro(nom) {
 		return Some(response_extra("ROOM_TEXT", "NOT_JOINED", &rn));
 	    }
-	    if let Err(_) = room.send(room_text_from(&rn, nom, msg)).await {
-		CUARTOS.write().await.remove(&rn);
-	    }
-	    return None;
 	},
     }
+    todos_menos_cuarto(room_text_from(&rn, nom, msg), &rn, nom).await;
+    None
 }
 
 /**
@@ -547,14 +459,13 @@ async fn abandonar_cuarto(rn: String, nom: &String) -> Option<String> {
 	    if room.miembros().is_empty() {
 		cuarto_vacio = true;
 	    }
-	    if let Err(_) = room.send(left_room(&rn, nom)).await {
-		cuarto_vacio = true;
-	    }
 	},
     }
     if cuarto_vacio {
 	CUARTOS.write().await.remove(&rn);
+	return None;
     }
+    todos_menos_cuarto(left_room(&rn, nom) , &rn, nom).await;
     None
 }
 
@@ -569,16 +480,60 @@ async fn desconecta(nom: &String) {
     CLIENTES.write().await.remove(nom);
     USUARIOS.write().await.remove(nom);
     
-    let clientes = CLIENTES.read().await;
-    for (_, sender) in clientes.iter() {
-	if let Err(_) = sender.send(disconnected(nom)).await { continue; }
-    }
+    todos_menos(disconnected(nom), nom).await;
 
     let mut cuartos = CUARTOS.write().await;
+    let mut miembrode: Vec<String> = Vec::new();
     for (rn, cuarto) in cuartos.iter_mut() {
 	if cuarto.es_miembro(nom) {
 	    cuarto.salio(nom);
-	    if let Err(_) = cuarto.send(left_room(rn, nom)).await { continue; }
+	    miembrode.push(rn.clone());
+	}
+    }
+    drop(cuartos);
+    for rn in miembrode {
+	todos_menos_cuarto(left_room(&rn, nom), &rn, nom).await;
+    }
+}
+
+/**
+ * Envia a todos excepto al cliente indicado un mensaje.
+ *
+ * # Argumentos
+ *
+ * `msg` - El mensaje que se desea mandar a todos los clientes.
+ * <br>
+ * `nom` - El nombre del cliente al que no se le desea mandar.
+ */
+async fn todos_menos(msg: String, nom: &String) {
+    let clientes = CLIENTES.read().await;
+    for (nombre, sender) in clientes.iter() {
+	if nombre == nom { continue; }
+	if let Err(_) = sender.send(msg.clone()).await {
+	    continue;
+	}
+    }
+}
+
+/**
+ * Envia a todos los miembros de un cuarto excepto al cliente indicado un mensaje.
+ *
+ * # Argumentos
+ *
+ * `msg` - El mensaje que se desea mandar a todos los clientes.
+ * <br>
+ * `rn` - El nombre del cuarto del que obtener los miembros.
+ * <br>
+ * `nom` - El nombre del cliente al que no se le desea mandar.
+ */
+async fn todos_menos_cuarto(msg: String, rn: &String, nom: &String) {
+    let clientes = CLIENTES.read().await;
+    let cuartos = CUARTOS.read().await;
+    let roomito = cuartos.get(rn).unwrap();
+    for user in roomito.miembros().iter() {
+	if user == nom { continue; }
+	if let Err(_) = clientes.get(user).unwrap().send(msg.clone()).await {
+	    continue;
 	}
     }
 }
