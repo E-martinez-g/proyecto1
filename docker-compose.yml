@@ -1,0 +1,14 @@
+services:
+  servidor:
+    build:
+      context: .
+      dockerfile: Dockerfile.servidor
+    ports:
+      - "42069:42069"
+
+  cliente:
+    build:
+      context: .
+      dockerfile: Dockerfile.cliente
+    depends_on:
+      - servidor
