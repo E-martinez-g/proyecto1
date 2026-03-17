@@ -2,7 +2,7 @@ use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, AsyncReadExt, BufReader, L
 use tokio::net::TcpStream;
 use tokio::select;
 
-use protocolo::{*, Operacion::*, Resultado::*, ServerType::*, mensajes_cliente::*};
+use protocolo::{*, Operacion::*, Resultado::*, ServerType, ServerType::*, mensajes_cliente::*};
 
 use colored::Colorize;
 
@@ -39,12 +39,16 @@ async fn main() {
 	    }
 	}
     }
-    
+    loop {
+	tokio::select!({
+	    
+	});
+    }
 }
 
 async fn identificacion(conexion: &mut TcpStream,
 			lineas: &mut Lines<BufReader<Stdin>>)
-			-> Result<String, util::ErrorCliente> {
+			-> Result<ServerType, util::ErrorCliente> {
     let mut line = match lineas.next_line().await {
 	Err(e) => return Err(EntradaEstandar{ error: Some(e) }),
 	Ok(None) => return Err(EntradaEstandar{ error: None }),
@@ -63,15 +67,8 @@ async fn identificacion(conexion: &mut TcpStream,
     };
     match parsea_mensaje_servidor(String::from_utf8_lossy(&buffer[..n])
 				  .to_string()) {
-	Ok(Response { result: b, extra: Some(c),.. }) => {
-	    if b == UserAlreadyExists {
-		return Err(NombreOcupado);
-	    } else if b == Success {
-		return Ok(c);
-	    } else {
-		return Err(Invalido);
-	    }
-	},
+	Ok(n @ Response { operation: Identify, result: b, extra: Some(c) }) =>
+	    return n,
 	_ => return Err(Invalido),
     }
 }

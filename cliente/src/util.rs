@@ -1,8 +1,8 @@
+use protocolo::{ServerType, ServerType::*, EstadoUsuario, EstadoUsuario::*, Operacion, Operacion::*, Resultado, Resultado::*};
 use std::io::Error;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, DefaultHasher};
 use colored::*;
-use protocolo::{ServerType, ServerType::*, EstadoUsuario, EstadoUsuario::*};
 use crate::util::ErrorCliente::*;
 
 /**
@@ -12,9 +12,7 @@ pub enum ErrorCliente {
     EntradaEstandar { error: Option<Error> },
     Conexion{ error: Error, direccion: String },
     NombreVacio,
-    NombreOcupado,
     NombreCuartoVacio,
-    NombreCuartoOcupado,
     Envio{ error: Error },
     Recepcion{ error: Error },
     Invalido,
@@ -39,12 +37,8 @@ pub fn error(err: ErrorCliente) {
 		     d.to_string().bold(), e),
 	NombreVacio =>
 	    println!("No se puede utilizar un nombre vacío."),
-	NombreOcupado =>
-	    println!("El nombre elegido ya está en uso."),
 	NombreCuartoVacio =>
 	    println!("Los cuartos no pueden tener un nombre vacío."),
-	NombreCuartoOcupado =>
-	    println!("Ya existe un cuarto con ese nombre."),
 	Envio{ error: e } =>
 	    println!("Ocurrió un error al enviar datos al servidor. {}",
 		     e),
@@ -68,51 +62,51 @@ pub fn sistema(st: ServerType) {
 	r @ Response{..} => respuesta(r),
 	
 	NewUser{ username: u } =>
-	    format!("* {} se unió a la conversación. *",
+	    format!("* {} se unió a la conversación. *\n",
 		    colorea(u)).dimmed().to_string(),
 	
 	NewStatus{ username: u, status:  Active } =>
-	    format!("* {} cambió su estado a {} *",
-		    colorea(u), "ACTIVO".green()).dimmed().to_string(),
+	    format!("* {} cambió su estado a {} *\n",
+		    colorea(u), "Activo".green()).dimmed().to_string(),
 	
 	NewStatus{ username: u, status: Away } =>
-	    format!("* {} cambió su estado a {} *",
-		    colorea(u), "AUSENTE".yellow()).dimmed().to_string(),
+	    format!("* {} cambió su estado a {} *\n",
+		    colorea(u), "Ausente".yellow()).dimmed().to_string(),
 	
 	NewStatus{ username: u, status: Busy } =>
-	    format!("* {} cambió su estado a {} *",
-		    colorea(u), "OCUPADO".red()).dimmed().to_string(),
+	    format!("* {} cambió su estado a {} *\n",
+		    colorea(u), "Ocupado".red()).dimmed().to_string(),
 
 	UserList{ users: us } => lista(us),
 
 	TextFrom { username: u, text: t } =>
-	    format!("[{} (MD)] {}", colorea(u), t),
+	    format!("[{} (MD)] {}\n", colorea(u), t),
 	
 	PublicTextFrom{ username: u, text: t } =>
-	    format!("[{}] {}", colorea(u), t),
+	    format!("[{}] {}\n", colorea(u), t),
 	
 	Invitation{ username: u, roomname: r } =>
-	    format!("* {} te invitó al cuarto {}. *",
+	    format!("* {} te invitó al cuarto {}. *\n",
 		    colorea(u), colorea(r)).dimmed().to_string(),
 	
 	JoinedRoom{ roomname: r, username: u } =>
-	    format!("* {} se unió al cuarto {}. *",
+	    format!("* {} se unió al cuarto {}. *\n",
 		    colorea(u), colorea(r)).dimmed().to_string(),
 	
 	RoomUserList{ roomname: r, users: us } => lista_cuarto(r, us),
 
 	RoomTextFrom{ roomname: r, username: u, text: t } =>
-	    format!("[{} @ {}] {}", colorea(u), colorea(r), t),
+	    format!("[{} @ {}] {}\n", colorea(u), colorea(r), t),
 
 	LeftRoom{ roomname: r, username: u } =>
-	    format!("* {} abandonó el cuarto {}. *",
+	    format!("* {} abandonó el cuarto {}. *\n",
 		    colorea(u), colorea(r)).dimmed().to_string(),
 
 	Disconnected{ username: u } =>
-	    format!("* {} abandonó la conversación. *",
+	    format!("* {} abandonó la conversación. *\n",
 		    colorea(u)).dimmed().to_string(),
     };
-    println!("{}", msg);
+    print!("{}", msg);
 }
 
 /**
@@ -151,9 +145,9 @@ fn lista(us: HashMap<String, EstadoUsuario>) -> String {
     for (nombre, estado) in us.iter() {
 	usuarios += &format!("• {}: ", nombre);
 	match estado {
-	    Active => usuarios += &"ACTIVO".green().to_string(),
-	    Away => usuarios += &"AUSENTE".yellow().to_string(),
-	    Busy => usuarios += &"OCUPADO".red().to_string(),
+	    Active => usuarios += &"Activo".green().to_string(),
+	    Away => usuarios += &"Ausente".yellow().to_string(),
+	    Busy => usuarios += &"Ocupado".red().to_string(),
 	}
 	usuarios += "\n";
     }
@@ -182,5 +176,9 @@ fn lista_cuarto(r: String, us: HashMap<String, EstadoUsuario>) -> String {
  * `r` - La respuesta enviada por el servidor.
  */
 pub fn respuesta(r: ServerType) -> String {
-    format!("algo {}", "bien")
+    match r {
+	Respuesta{ operation: IDENTIFY, result: SUCCESS, extra: Some(n) } =>
+	    return format!("* Te identificaste como {}. *", n),
+	Respuesta{ operation: IDENTIFY }
+    }
 }

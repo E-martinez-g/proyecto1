@@ -147,7 +147,7 @@ pub enum ServerType {
  *         seriado a buscar.
  */
 pub fn parsea_mensaje_cliente(ser: String)
-			      -> std::result::Result<ClientType, serde_json::Error> {
+			      -> Result<ClientType, serde_json::Error> {
     serde_json::from_str(&ser)
 }
 
@@ -161,7 +161,7 @@ pub fn parsea_mensaje_cliente(ser: String)
  *         seriado a buscar.
  */
 pub fn parsea_mensaje_servidor(ser: String)
-			       -> std::result::Result<ServerType, serde_json::Error> {
+			       -> Result<ServerType, serde_json::Error> {
     serde_json::from_str(&ser)
 }
 
