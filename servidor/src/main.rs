@@ -87,7 +87,7 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 
     nuevo_usuario(&nom).await;
     
-    USUARIOS.write().await.insert(nom.clone(), ACTIVE);
+    USUARIOS.write().await.insert(nom.clone(), Active);
 
     let (sender, mut receiver) = mpsc::channel::<String>(128);
     CLIENTES.write().await.insert(nom.clone(), sender);

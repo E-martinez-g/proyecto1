@@ -25,11 +25,47 @@ pub fn server_address() -> String {
 /**
  * Enumeración para el estado de los usuarios.
  */
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EstadoUsuario {
-    ACTIVE,
-    AWAY,
-    BUSY,
+    Active,
+    Away,
+    Busy,
+}
+
+/**
+ * Enumeración para los tipos de operaciones a las que se les puede responder.
+ */
+#[derive(Deserialize, PartialEq)]
+#[serde(tag = "operation", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Operacion {
+    Identify,
+    Text,
+    NewRoom,
+    Invite,
+    JoinRoom,
+    RoomUsers,
+    RoomText,
+    LeaveRoom,
+    Invalid,
+}
+
+/**
+ * Enumeración para los resultados posibles de las operaciones a las que se les
+ * puede responder.
+ */
+#[derive(Deserialize, PartialEq)]
+#[serde(tag = "result", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Resultado {
+    Success,
+    UserAlreadyExists,
+    NoSuchUser,
+    RoomAlreadyExists,
+    NoSuchRoom,
+    NotInvited,
+    NotJoined,
+    NotIdentified,
+    Invalid,
 }
 
 /**
@@ -37,43 +73,31 @@ pub enum EstadoUsuario {
  * envía el cliente.
  */
 #[derive(Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ClientType {
     
-    #[serde(rename = "IDENTIFY")]
     Identify { username: String },
     
-    #[serde(rename = "STATUS")]
     Status { status: EstadoUsuario },
     
-    #[serde(rename = "USERS")]
     Users,
     
-    #[serde(rename = "TEXT")]
     Text { username: String, text: String },
     
-    #[serde(rename = "PUBLIC_TEXT")]
     PublicText { text: String },
     
-    #[serde(rename = "NEW_ROOM")]
     NewRoom { roomname: String },
     
-    #[serde(rename = "INVITE")]
     Invite { roomname: String, usernames: Vec<String> },
     
-    #[serde(rename = "JOIN_ROOM")]
     JoinRoom { roomname: String },
     
-    #[serde(rename = "ROOM_USERS")]
     RoomUsers { roomname: String },
     
-    #[serde(rename = "ROOM_TEXT")]
     RoomText { roomname: String, text: String },
     
-    #[serde(rename = "LEAVE_ROOM")]
     LeaveRoom { roomname: String },
     
-    #[serde(rename = "DISCONNECT")]
     Disconnect,
 }
 
@@ -82,46 +106,34 @@ pub enum ClientType {
  * envía el servidor.
  */
 #[derive(Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ServerType {
     
-    #[serde(rename = "RESPONSE")]
-    Response { operation: String, result: String,
+    Response { operation: Operacion, result: Resultado,
 	       extra: Option<String> },
     
-    #[serde(rename = "NEW_USER")]
     NewUser { username: String },
     
-    #[serde(rename = "NEW_STATUS")]
     NewStatus { username: String, status: EstadoUsuario },
     
-    #[serde(rename = "USER_LIST")]
-    UserList { users: HashMap<String, String> },
+    UserList { users: HashMap<String, EstadoUsuario> },
     
-    #[serde(rename = "TEXT_FROM")]
     TextFrom { username: String, text: String },
     
-    #[serde(rename = "PUBLIC_TEXT_FROM")]
     PublicTextFrom { username: String, text: String },
 
-    #[serde(rename = "INVITATION")]
     Invitation{ username: String, roomname: String },
     
-    #[serde(rename = "JOINED_ROOM")]
     JoinedRoom { roomname: String, username: String },
     
-    #[serde(rename = "ROOM_USER_LIST")]
     RoomUserList { roomname: String,
-		   users: HashMap<String, String> },
+		   users: HashMap<String, EstadoUsuario> },
     
-    #[serde(rename = "ROOM_TEXT_FROM")]
     RoomTextFrom { roomname: String, username: String,
 		   text: String },
     
-    #[serde(rename = "LEFT_ROOM")]
     LeftRoom { roomname: String, username: String },
     
-    #[serde(rename = "DISCONNECTED")]
     Disconnected { username: String },
 }
 
@@ -135,7 +147,7 @@ pub enum ServerType {
  *         seriado a buscar.
  */
 pub fn parsea_mensaje_cliente(ser: String)
-			      -> Result<ClientType, serde_json::Error> {
+			      -> std::result::Result<ClientType, serde_json::Error> {
     serde_json::from_str(&ser)
 }
 
@@ -149,7 +161,7 @@ pub fn parsea_mensaje_cliente(ser: String)
  *         seriado a buscar.
  */
 pub fn parsea_mensaje_servidor(ser: String)
-			       -> Result<ServerType, serde_json::Error> {
+			       -> std::result::Result<ServerType, serde_json::Error> {
     serde_json::from_str(&ser)
 }
 

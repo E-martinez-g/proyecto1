@@ -1,67 +1,79 @@
-use std::net::TcpStream;
-use std::io;
-use std::io::{Stdin, BufRead, Read, Write};
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, AsyncReadExt, BufReader, Lines, Stdin};
+use tokio::net::TcpStream;
+use tokio::select;
 
-use protocolo::*;
-use protocolo::ServerType::*;
-use protocolo::mensajes_cliente::*;
+use protocolo::{*, Operacion::*, Resultado::*, ServerType::*, mensajes_cliente::*};
 
-fn main() {
-    let entrada_estandar = io::stdin();
+use colored::Colorize;
+
+use util::ErrorCliente::*;
+
+#[tokio::main]
+async fn main() {
+    let mut entrada_estandar = BufReader::new(io::stdin()).lines();
     
     let direccion_servidor = server_address();
-    let conexion = match TcpStream::connect(&direccion_servidor) {
+    let mut conexion = match TcpStream::connect(&direccion_servidor).await {
 	Ok(stream) => stream,
-	Err(_) => {
-	    eprintln!("No se pudo conectar a un servidor en {}.",
-		      direccion_servidor);
+	Err(e) => {
+	    util::error(Conexion{ error: e, direccion: direccion_servidor });
 	    return;
 	}
     };
-    println!("Conectado al servidor en {}.", direccion_servidor);
-    println!("¿Cuál es tu nombre?");
+    print!("\r[Sys] ¿Cuál es tu nombre?: ");
+    let nombre;
     loop {
-	match identificacion(&conexion, &entrada_estandar) {
+	match identificacion(&mut conexion, &mut entrada_estandar).await {
 	    Err(e) => {
-		println!("{}", e);
-		if e != "Ese nombre ya está siendo utilizado." {
-		    return;
+		let mut esfatal = false;
+		if !matches!(e, NombreVacio | NombreOcupado) {
+		    esfatal = true;
 		}
+		util::error(e);
+		if esfatal { return; }
 	    },
-	    Ok(nombre) => {
-		println!("¡Hola, {}!", nombre);
+	    Ok(n) => {
+		nombre = n;
+		println!("[Sys] ¡Hola, {}!", &nombre.bold());
 		break;
 	    }
 	}
     }
+    
 }
 
-fn identificacion(mut conexion: &TcpStream, entrada: &Stdin) -> Result<String, String> {
-    let mut line = String::new();
-    entrada.lock().read_line(&mut line).unwrap();
-    let line = line.trim().to_string();
+async fn identificacion(conexion: &mut TcpStream,
+			lineas: &mut Lines<BufReader<Stdin>>)
+			-> Result<String, util::ErrorCliente> {
+    let mut line = match lineas.next_line().await {
+	Err(e) => return Err(EntradaEstandar{ error: Some(e) }),
+	Ok(None) => return Err(EntradaEstandar{ error: None }),
+	Ok(Some(l)) => l.trim().to_string(),
+    };
     if line.is_empty() {
-	return Err("No se puede usar un nombre vacío.".to_string())
+	return Err(NombreVacio)
     }
-    if let Err(_) = conexion.write(&identify(&line).as_bytes()) {
-	return Err("Ocurrió un problema al escribirle al servidor.".to_string());
+    if let Err(e) = conexion.write(&identify(&line).as_bytes()).await {
+	return Err(Envio{ error: e });
     }
     let mut buffer = [0u8; 1024];
-    let n = match conexion.read(&mut buffer) {
+    let n = match conexion.read(&mut buffer).await {
 	Ok(a) => a,
-	Err(_) => return Err("Ocurrió un problema al recibir un mensaje del servidor.".to_string()),
+	Err(e) => return Err(Recepcion{ error: e }),
     };
     match parsea_mensaje_servidor(String::from_utf8_lossy(&buffer[..n])
 				  .to_string()) {
 	Ok(Response { result: b, extra: Some(c),.. }) => {
-	    if b == "USER_ALREADY_EXISTS" {
-		return Err("Ese nombre ya está siendo utilizado.".to_string());
-	    } else if b == "SUCCESS" {
+	    if b == UserAlreadyExists {
+		return Err(NombreOcupado);
+	    } else if b == Success {
 		return Ok(c);
 	    } else {
-		return Err("El mensaje recibido del servidor no fue válido".to_string());
+		return Err(Invalido);
 	    }
 	},
-	_ => return Err("El mensaje recibido del servidor no fue válido".to_string()),
+	_ => return Err(Invalido),
     }
 }
+
+pub mod util;

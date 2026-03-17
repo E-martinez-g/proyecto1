@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::option::Option;
+use colored::Colorize;
 use std::io::Error;
 
 /**
@@ -15,10 +16,9 @@ use std::io::Error;
  *            dirección IP.
  */
 pub fn recibido(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String>) {
-    match nombre {
-	None => println!("** MENSAJE RECIBIDO DE {}: {}", direccion, mensaje),
-	Some(n) => println!("** MENSAJE RECIBIDO DE {} ({}): {}", direccion, n, mensaje),
-    }
+    print!("** MENSAJE {} DE {}", "RECIBIDO".green(), direccion.to_string().bold());
+    if let Some (n) = nombre { print!(" ({})", n.magenta()); }
+    println!(": {}", mensaje);
 }
 
 /**
@@ -34,10 +34,9 @@ pub fn recibido(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String
  *            dirección IP.
  */
 pub fn enviado(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String>) {
-    match nombre {
-	None => println!("** MENSAJE ENVIADO A {}: {}", direccion, mensaje),
-	Some(n) => println!("** MENSAJE ENVIADO A {} ({}): {}", direccion, n, mensaje),
-    }
+    print!("** MENSAJE {} A {}", "ENVIADO".green(), direccion.to_string().bold());
+    if let Some (n) = nombre { print!(" ({})", n.magenta()); }
+    println!(": {}", mensaje);
 }
 
 /**
@@ -48,27 +47,35 @@ pub fn enviado(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String>
  * `error` - El error ocurrido.
  */
 pub fn error(e: ErrorServidor) {
-    eprint!("** ERROR: \n\t");
+    eprint!("** {}: \n\t", "ERROR".red());
     match e {
 	ErrorServidor::Creacion { error: e, direccion: d } =>
-	    eprintln!("No se pudo crear el servidor en {}: {}", d, e),
+	    eprintln!("No se pudo crear el servidor en {}: {}",
+		      d.to_string().bold(), e),
 	ErrorServidor::Aceptacion { error: e } =>
-	    eprintln!("Ocurrió un error al intentar aceptar una conexión: {}", e),
+	    eprintln!("Ocurrió un error al intentar aceptar una conexión: {}",
+		      e),
 	ErrorServidor::Reidentify { direccion: d, nombre: n } =>
 	    eprintln!("El cliente en {}, identificado como {} intentó volver a identificarse.",
-		      d, n),
+		      d.to_string().bold(), n.magenta()),
 	ErrorServidor::Recepcion { error: e, direccion: d, nombre: Some(n) } =>
-	    eprintln!("Ocurrió un error al recibir un mensaje de {} ({}): {}", d, n, e),
+	    eprintln!("Ocurrió un error al recibir un mensaje de {} ({}): {}",
+		      d.to_string().bold(), n.magenta(), e),
 	ErrorServidor::Recepcion { error: e, direccion: d, nombre: None } =>
-	    eprintln!("Ocurrió un error al recibir un mensaje de {}: {}", d, e),
+	    eprintln!("Ocurrió un error al recibir un mensaje de {}: {}",
+		      d.to_string().bold(), e),
 	ErrorServidor::Envio { error: e, direccion: d, nombre: Some(n) } =>
-	    eprintln!("Ocurrió un error al enviar un mensaje a {} ({}): {}", d, n, e),
+	    eprintln!("Ocurrió un error al enviar un mensaje a {} ({}): {}",
+		      d.to_string().bold(), n.magenta(), e),
 	ErrorServidor::Envio { error: e, direccion: d, nombre: None } =>
-	    eprintln!("Ocurrió un error al enviar un mensaje a {}: {}", d, e),
+	    eprintln!("Ocurrió un error al enviar un mensaje a {}: {}",
+		      d.to_string().bold(), e),
 	ErrorServidor::Invalido { direccion: d, nombre: Some(n) } =>
-	    eprintln!("El mensaje enviado por {} ({}) fue inválido.", d, n),
+	    eprintln!("El mensaje enviado por {} ({}) fue inválido.",
+		      d.to_string().bold(), n.magenta()),
 	ErrorServidor::Invalido { direccion: d, nombre: None } =>
-	    eprintln!("El mensaje enviado por {} fue inválido.", d),
+	    eprintln!("El mensaje enviado por {} fue inválido.",
+		      d),
 	_ => {},
     }
     eprint!("\n");
