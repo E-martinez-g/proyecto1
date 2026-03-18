@@ -36,7 +36,7 @@ pub enum EstadoUsuario {
 /**
  * Enumeración para los tipos de operaciones a las que se les puede responder.
  */
-#[derive(Deserialize, PartialEq)]
+#[derive(Deserialize, PartialEq, Clone, Copy)]
 #[serde(tag = "operation", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Operacion {
     Identify,
@@ -54,7 +54,7 @@ pub enum Operacion {
  * Enumeración para los resultados posibles de las operaciones a las que se les
  * puede responder.
  */
-#[derive(Deserialize, PartialEq)]
+#[derive(Deserialize, PartialEq, Clone, Copy)]
 #[serde(tag = "result", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Resultado {
     Success,

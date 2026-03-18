@@ -1,4 +1,4 @@
-use protocolo::{ServerType, ServerType::*, EstadoUsuario, EstadoUsuario::*, Operacion, Operacion::*, Resultado, Resultado::*};
+use protocolo::{ServerType, ServerType::*, EstadoUsuario, EstadoUsuario::*, Operacion::*, Resultado::*};
 use std::io::Error;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, DefaultHasher};
@@ -175,10 +175,39 @@ fn lista_cuarto(r: String, us: HashMap<String, EstadoUsuario>) -> String {
  *
  * `r` - La respuesta enviada por el servidor.
  */
-pub fn respuesta(r: ServerType) -> String {
-    match r {
-	Respuesta{ operation: IDENTIFY, result: SUCCESS, extra: Some(n) } =>
-	    return format!("* Te identificaste como {}. *", n),
-	Respuesta{ operation: IDENTIFY }
-    }
+fn respuesta(r: ServerType) -> String {
+    let s = match r {
+	Response{ operation: Identify, result: Success, extra: Some(n) } =>
+	    format!("* Te identificaste como {}. *", colorea(n)),
+	Response{ operation: Identify, result: UserAlreadyExists, extra: Some(n) } =>
+	    format!("Ya existe un usuario con el nombre {}.", colorea(n)),
+	Response{ operation: Text, result: NoSuchUser, extra: Some(n) } =>
+	    format!("No existe un usuario con el nombre {}.", n),
+	Response{ operation: NewRoom, result: Success, extra: Some(n) } =>
+	    format!("* Se creó con éxito el cuarto {}. *", colorea(n)),
+	Response{ operation: NewRoom, result: RoomAlreadyExists, extra: Some(n) } =>
+	    format!("Ya existe un cuarto llamado {}.", colorea(n)),
+	Response{ operation: Invite, result: NoSuchRoom, extra: Some(n) } =>
+	    format!("No se pudo invitar porque no existe un cuarto llamado {}.", n),
+	Response{ operation: Invite, result: NoSuchUser, extra: Some(n) } =>
+	    format!("No se pudo invitar porque no existe un usuario con el nombre {}.", n),
+	Response{ operation: JoinRoom, result: Success, extra: Some(n) } =>
+	    format!("* Te unista al cuarto {}. *", colorea(n)),
+	Response{ operation: JoinRoom, result: NoSuchRoom, extra: Some(n) } =>
+	    format!("No pudiste unirte porque no existe un cuarto llamado {}.", n),
+	Response{ operation: JoinRoom, result: NotInvited, extra: Some(n) } =>
+	    format!("No pudiste unirte porque no fuiste invitado a {}", colorea(n)),
+	Response{ operation: RoomUsers, result: NoSuchRoom, extra: Some(n) } =>
+	    format!("No se pudo obtener la lista de miembros porque {} no existe.", n),
+	Response{ operation: RoomUsers, result: NotJoined, extra: Some(n) } =>
+	    format!("No se pudo obtener la lista de miembros porque no estás en {}.", colorea(n)),
+	Response{ operation: LeaveRoom, result: NoSuchRoom, extra: Some(n) } =>
+	    format!("No pudiste abandonar el cuarto {} porque no existe", n),
+	Response{ operation: LeaveRoom, result: NotJoined, extra: Some(n) } =>
+	    format!("No pudiste abandonar el cuarto {} porque no eres miembro.", colorea(n)),
+	_ => "Esto no debería suceder".to_string(),
+    };
+    s.dimmed().to_string()
 }
+
+//TODO: maneja_stdin, status, msg, users, room, join, roomusers, invite, roommsg, leave, disconnect 

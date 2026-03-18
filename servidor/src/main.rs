@@ -363,8 +363,6 @@ async fn invitaciones(us: Vec<String>, rn: String, nom: &String) -> Option<Strin
 	None => return Some(response_extra("INVITE", "NO_SUCH_ROOM", &rn)),
 	Some(room) => {
 	    if !room.es_miembro(&nom) { return None; }
-	    let clientes = CLIENTES.read().await;
-	    let own_sender = clientes.get(nom).unwrap();
 	    for user in us {
 		if &user == nom ||
 		   room.es_invitado(&user) ||
@@ -372,8 +370,7 @@ async fn invitaciones(us: Vec<String>, rn: String, nom: &String) -> Option<Strin
 		
 		match CLIENTES.read().await.get(&user) {
 		    None => {
-			let _ = own_sender.send(response_extra("INVITE", "NO_SUCH_USER",
-							       &user)).await;
+			return Some(response_extra("INVITE", "NO_SUCH_USER", &user));
 		    },
 		    Some(sender) => {
 			if let Err(_) = sender.send(invitation(nom, &rn)).await { continue; }

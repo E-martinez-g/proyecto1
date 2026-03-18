@@ -20,36 +20,36 @@ async fn main() {
 	    return;
 	}
     };
-    print!("\r[Sys] ¿Cuál es tu nombre?: ");
+    println!("[Sys] ¿Cuál es tu nombre?");
     let nombre;
     loop {
 	match identificacion(&mut conexion, &mut entrada_estandar).await {
 	    Err(e) => {
 		let mut esfatal = false;
-		if !matches!(e, NombreVacio | NombreOcupado) {
+		if !matches!(e, NombreVacio) {
 		    esfatal = true;
 		}
 		util::error(e);
 		if esfatal { return; }
 	    },
-	    Ok(n) => {
-		nombre = n;
-		println!("[Sys] ¡Hola, {}!", &nombre.bold());
-		break;
+	    Ok(Response{ operation: Identify, result: b, extra: Some(n)}) => {
+		if matches!(b, Success) {
+		    nombre = n.clone();
+		    util::sistema(Response{operation: Identify, result: b, extra: Some(n)});
+		    println!("[Sys] ¡Hola, {}!", &nombre.bold());
+		    break;
+		}
+		util::sistema(Response{operation: Identify, result: b, extra: Some(n)});
 	    }
+	    _ => return,
 	}
-    }
-    loop {
-	tokio::select!({
-	    
-	});
     }
 }
 
 async fn identificacion(conexion: &mut TcpStream,
 			lineas: &mut Lines<BufReader<Stdin>>)
 			-> Result<ServerType, util::ErrorCliente> {
-    let mut line = match lineas.next_line().await {
+    let line = match lineas.next_line().await {
 	Err(e) => return Err(EntradaEstandar{ error: Some(e) }),
 	Ok(None) => return Err(EntradaEstandar{ error: None }),
 	Ok(Some(l)) => l.trim().to_string(),
@@ -67,8 +67,8 @@ async fn identificacion(conexion: &mut TcpStream,
     };
     match parsea_mensaje_servidor(String::from_utf8_lossy(&buffer[..n])
 				  .to_string()) {
-	Ok(n @ Response { operation: Identify, result: b, extra: Some(c) }) =>
-	    return n,
+	Ok(n @ Response { .. }) =>
+	    return Ok(n),
 	_ => return Err(Invalido),
     }
 }
