@@ -70,6 +70,12 @@ pub fn error(e: ErrorServidor) {
 	ErrorServidor::Envio { error: e, direccion: d, nombre: None } =>
 	    eprintln!("Ocurrió un error al enviar un mensaje a {}: {}",
 		      d.to_string().bold(), e),
+	ErrorServidor::NombreInvalido { direccion: d, nombre: Some(n) } =>
+	    eprintln!("El nombre solicitado por {} ({}) es muy largo.",
+		      d.to_string().bold(), n.magenta()),
+	ErrorServidor::NombreInvalido { direccion: d, nombre: None } =>
+	    eprintln!("El nombre solicitado por {} es muy largo.",
+		      d),
 	ErrorServidor::Invalido { direccion: d, nombre: Some(n) } =>
 	    eprintln!("El mensaje enviado por {} ({}) fue inválido.",
 		      d.to_string().bold(), n.magenta()),
@@ -91,5 +97,6 @@ pub enum ErrorServidor{
     Envio {error: Error, direccion: SocketAddr, nombre: Option<String> },
     Reidentify { direccion: SocketAddr, nombre: String },
     Invalido { direccion: SocketAddr, nombre: Option<String> },
+    NombreInvalido { direccion: SocketAddr, nombre: Option<String> },
     Desconectado,
 }

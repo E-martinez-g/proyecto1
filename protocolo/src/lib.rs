@@ -25,7 +25,7 @@ pub fn server_address() -> String {
 /**
  * Enumeración para el estado de los usuarios.
  */
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EstadoUsuario {
     Active,
@@ -36,8 +36,8 @@ pub enum EstadoUsuario {
 /**
  * Enumeración para los tipos de operaciones a las que se les puede responder.
  */
-#[derive(Deserialize, PartialEq, Clone, Copy)]
-#[serde(tag = "operation", rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Deserialize, PartialEq, Clone, Copy, Debug)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Operacion {
     Identify,
     Text,
@@ -54,8 +54,8 @@ pub enum Operacion {
  * Enumeración para los resultados posibles de las operaciones a las que se les
  * puede responder.
  */
-#[derive(Deserialize, PartialEq, Clone, Copy)]
-#[serde(tag = "result", rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Deserialize, PartialEq, Clone, Copy, Debug)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Resultado {
     Success,
     UserAlreadyExists,
@@ -105,7 +105,7 @@ pub enum ClientType {
  * Enumeración para el "type" de los mensajes que
  * envía el servidor.
  */
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ServerType {
     

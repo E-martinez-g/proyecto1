@@ -1,4 +1,6 @@
-use protocolo::{ServerType, ServerType::*, EstadoUsuario, EstadoUsuario::*, Operacion::*, Resultado::*};
+use protocolo::{ServerType, ServerType::*, EstadoUsuario, EstadoUsuario::*, Operacion::*, Resultado::*, mensajes_cliente::*};
+use tokio::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::io::Error;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, DefaultHasher};
@@ -9,13 +11,66 @@ use crate::util::ErrorCliente::*;
  * Enumeración para los errores que pueden ocurrir en el cliente.
  */
 pub enum ErrorCliente {
-    EntradaEstandar { error: Option<Error> },
-    Conexion{ error: Error, direccion: String },
     NombreVacio,
+    NombreMuyLargo,
     NombreCuartoVacio,
+    NombreCuartoMuyLargo,
+    EstadoInvalido,
+    UsuarioFaltante,
+    CuartoFaltante, 
+    MensajeFaltante,
+    Invalido,
     Envio{ error: Error },
     Recepcion{ error: Error },
-    Invalido,
+    Conexion{ error: Error, direccion: String },
+    EntradaEstandar { error: Option<Error> },
+}
+
+/**
+ * Envía un mensaje al servidor.
+ *
+ * # Argumentos
+ *
+ * `d` - La dirección IP del cliente al que se enviará el mensaje.
+ * <br>
+ * `ts` - La conexión con el cliente.
+ * <br>
+ * `nom` - Posiblemente, el nombre con el que se identificó el usuario.
+ * <br>
+ * `msg` - Un String con el mensaje a enviar al cliente
+ */
+pub async fn envia(ts: &mut TcpStream, msg: String) -> Result<(), ErrorCliente> {
+    if let Err(e) = ts.write(msg.as_bytes()).await {
+	return Err(Envio { error: e });
+    }
+    Ok(())
+}
+
+/**
+ * Recibe un mensaje de un cliente y lo registra en la bitácora.
+ *
+ * # Argumentos
+ *
+ * `d` - La dirección IP del cliente que envió el mensaje.
+ * <br>
+ * `ts` - La conexión con el cliente.
+ * <br>
+ * `nom` - Posiblemente, el nombre con el que se identificó el usuario.
+ */
+pub async fn recibe(ts: &mut TcpStream) -> Result<Option<String>, ErrorCliente> {
+    let mut buffer = [0u8; 512];
+
+    let n = match ts.read(&mut buffer).await {
+	Ok(0) => return Ok(None),
+	Ok(a) => a,
+	Err(e) => {
+	    return Err(Recepcion {error: e })
+	}
+    };
+
+    let rec = String::from_utf8_lossy(&buffer[..n]).to_string();
+
+    Ok(Some(rec))
 }
 
 /**
@@ -26,28 +81,39 @@ pub enum ErrorCliente {
  * `err` - El error que se quiere imprimir.
  */
 pub fn error(err: ErrorCliente) {
-    print!("[Sys] ");
+    let mut s = String::from("[Sys] ");
     match err {
-	EntradaEstandar{ error: None } =>
-	    println!("Se cerró la entrada estándar."),
-	EntradaEstandar{ error: Some(e) } =>
-	    println!("Ocurrió un error en la entrada estándar. {}", e),
-	Conexion{ error: e, direccion: d } =>
-	    println!("No se pudo conectar a un servidor en {}. {}",
-		     d.to_string().bold(), e),
 	NombreVacio =>
-	    println!("No se puede utilizar un nombre vacío."),
+	    s = "No se puede utilizar un nombre vacío.".dimmed().to_string(),
+	NombreMuyLargo =>
+	    s = "El nombre elegido es muy largo. (MAX 8 CHARS)".dimmed().to_string(),
 	NombreCuartoVacio =>
-	    println!("Los cuartos no pueden tener un nombre vacío."),
-	Envio{ error: e } =>
-	    println!("Ocurrió un error al enviar datos al servidor. {}",
-		     e),
-	Recepcion{ error: e } =>
-	    println!("Ocurrió un error el recibir datos del servidor. {}",
-		     e),
+	    s = "Los cuartos no pueden tener un nombre vacío.".dimmed().to_string(),
+	NombreCuartoMuyLargo =>
+	    s = "El nombre elegido es muy largo. (MAX 16 CHARS)".dimmed().to_string(),
+	EstadoInvalido =>
+	    s = "El valor ingresado no corresponde a un estado válido.".dimmed().to_string(),
+	UsuarioFaltante =>
+	    s = "No se ingresó el nombre de un usuario.".dimmed().to_string(),
+	CuartoFaltante =>
+	    s = "No se ingresó el nombre de un cuarto.".dimmed().to_string(),
+	MensajeFaltante =>
+	    s = "No se ingresó un mensaje.".dimmed().to_string(),
 	Invalido =>
-	    println!("El servidor envió un mensaje inválido."),
+	    s += "El servidor envió un mensaje inválido.",
+	Envio{ error: e } =>
+	    s += &format!("Ocurrió un error al enviar datos al servidor. {}", e),
+	Recepcion{ error: e } =>
+	    s += &format!("Ocurrió un error el recibir datos del servidor. {}", e),
+	Conexion{ error: e, direccion: d } =>
+	    s += &format!("No se pudo conectar a un servidor en {}. {}",
+			  d.to_string().bold(), e),
+	EntradaEstandar{ error: None } =>
+	    s += "Se cerró la entrada estándar.",
+	EntradaEstandar{ error: Some(e) } =>
+	    s += &format!("Ocurrió un error en la entrada estándar. {}", e),
     }
+    println!("{}", s);
 }
 
 /**
@@ -207,7 +273,232 @@ fn respuesta(r: ServerType) -> String {
 	    format!("No pudiste abandonar el cuarto {} porque no eres miembro.", colorea(n)),
 	_ => "Esto no debería suceder".to_string(),
     };
-    s.dimmed().to_string()
+    s.dimmed().to_string() + "\n"
 }
 
-//TODO: maneja_stdin, status, msg, users, room, join, roomusers, invite, roommsg, leave, disconnect 
+/**
+ * Maneja lo que sea que el usuario escribió en la consola.
+ *
+ * # Argumentos
+ *
+ * `entrada` - La cadena que se recibió de la entrada estándar.
+ */
+pub fn maneja_stdin(entrada: String) -> Result<Option<String>, ErrorCliente> {
+    let limpia = entrada.trim();
+    let mut iterador = limpia.splitn(2, ' ');
+    let primera = iterador.next();
+    match primera.unwrap() {
+	"/status" => return nuevo_estado(iterador.next()),
+	"/msg" => return mensaje_privado(iterador.next()),
+	"/users" => return Ok(Some(users())),
+	"/room" => return crea_cuarto(iterador.next()),
+	"/join" => return unirse(iterador.next()),
+	"/roomusers" => return usuarios_cuarto(iterador.next()),
+	"/invite" => return invita(iterador.next()),
+	"/roommsg" => return mensaje_cuarto(iterador.next()),
+	"/leave" => return abandona(iterador.next()),
+	"/desconecta" => return Ok(Some(disconnect())),
+	"/help" => {
+	    ayuda();
+	    return Ok(None);},
+	"" => return Ok(None),
+	_ => {
+	    print!("\x1B[1A\x1B[2K\r[{}] {}\n", colorea("TÚ".to_string()), limpia);
+	    return Ok(Some(public_text(limpia.to_string())));
+	},
+    }
+}
+
+/**
+ * Regresa el mensaje para cambiar el estado.
+ *
+ * # Argumentos
+ *
+ * `estado` - Un `Option<&str>` que puede contener el nuevo estado.
+ */
+fn nuevo_estado(estado: Option<&str>) -> Result<Option<String>, ErrorCliente> {
+    match estado {
+	None => return Err(EstadoInvalido),
+	Some(s) => {
+	    match s {
+		"1" | "Activo" => return Ok(Some(status(Active))),
+		"2" | "Ausente" => return Ok(Some(status(Away))),
+		"3" | "Ocupado" => return Ok(Some(status(Busy))),
+		_ => return Err(EstadoInvalido),
+	    }
+	},
+    }
+}
+
+/**
+ * Regresa el mensaje para enviar un mensaje privado al usuario elegido.
+ * 
+ * # Argumentos
+ *
+ * `s` - Un `Option<&str>` que puede contener el nombre del usuario al que enviar
+ *       el mensaje y el mensaje a enviar.
+ */
+fn mensaje_privado(s: Option<&str>) -> Result<Option<String>, ErrorCliente> {
+    let resto = match s {
+	None => return Err(UsuarioFaltante),
+	Some(a) => a,
+    };
+    let mut iterator = resto.splitn(2, ' ');
+    let nom = iterator.next().unwrap();
+    if nom == "" { return Err(UsuarioFaltante); }
+    if nom.chars().count() > 8 { return Err(NombreMuyLargo); }
+    match iterator.next() {
+	None => return Err(MensajeFaltante),
+	Some(msg) => {
+	    match msg.trim() {
+		"" => return Err(MensajeFaltante),
+
+		_ => return Ok(Some(text(nom.to_string(), msg.to_string()))),
+	    }
+	},
+    }
+}
+
+/**
+ * Regresa el mensaje para crear un cuarto con el nombre elegido.
+ *
+ * # Argumentos
+ *
+ * `cuarto` - Un `Option<&str>` que posiblemente contiene el nombre del cuarto que se
+ *            quiere crear.
+ */
+fn crea_cuarto(cuarto: Option<&str>) -> Result<Option<String>, ErrorCliente> {
+    let nom = match cuarto {
+	None => return Err(CuartoFaltante),
+	Some(a) => a.trim(),
+    };
+    if nom == "" { return Err(CuartoFaltante); }
+    if nom.chars().count() > 16 { return Err(NombreCuartoMuyLargo); }
+    Ok(Some(new_room(nom.to_string())))
+}
+
+/**
+ * Regresa el mensaje para unirse al cuarto elegido.
+ *
+ * # Argumentos
+ *
+ * `cuarto` - Un `Option<&str>` que posiblemente contiene el nombre del cuarto al que
+ *            el usuario se quiere unir.
+ */
+fn unirse(cuarto: Option<&str>) -> Result<Option<String>, ErrorCliente> {
+    let nom = match cuarto {
+	None => return Err(CuartoFaltante),
+	Some(a) => a.trim(),
+    };
+    if nom == "" { return Err(CuartoFaltante); }
+    if nom.chars().count() > 16 { return Err(NombreCuartoMuyLargo); }
+    Ok(Some(join_room(nom.to_string())))
+}
+
+/**
+ * Regresa el mansaje para obtener la lista de usuarios del cuarto elegido.
+ *
+ * # Argumentos
+ *
+ * `cuarto` - Un `Option<&str>` que posiblemente contiene el nombre del cuarto cuya
+ *            lista de miembros se quiere obtener.
+ */
+fn usuarios_cuarto(cuarto: Option<&str>) -> Result<Option<String>, ErrorCliente> {
+    let nom = match cuarto {
+	None => return Err(CuartoFaltante),
+	Some(a) => a.trim(),
+    };
+    if nom == "" { return Err(CuartoFaltante); }
+    if nom.chars().count() > 16 { return Err(NombreCuartoMuyLargo); }
+    Ok(Some(room_users(nom.to_string())))
+}
+
+/**
+ * Regresa el mensaje para invitar personas al cuarto elegido.
+ *
+ * # Argumentos
+ *
+ * `s` - Un `Option<&str>` que posiblemente contiene el nombre del cuarto al que se
+ *       quiere invitar a los usuarios y los nombres de dichos usuarios.
+ */
+fn invita(s: Option<&str>) -> Result<Option<String>, ErrorCliente> {
+    let resto = match s {
+	None => return Err(CuartoFaltante),
+	Some(a) => a.trim(),
+    };
+    let mut iterator = resto.split_whitespace();
+    let cuarto = iterator.next().unwrap();
+    if cuarto == "" { return Err(CuartoFaltante); }
+    if cuarto.chars().count() > 16 { return Err(NombreCuartoMuyLargo); }
+    let mut invitados: Vec<String> = Vec::new();
+    loop {
+	match iterator.next() {
+	    None => break,
+	    Some(a) => {
+		match a {
+		    "" => continue,
+		    _ => invitados.push(a.to_string()),
+		}
+	    },
+	}
+    }
+    if invitados.is_empty() { return Err(UsuarioFaltante); }
+    Ok(Some(invite(cuarto.to_string(), invitados)))
+}
+
+/**
+ * Regresa el mensaje para enviar un mensaje al cuarto elegido
+ *
+ * # Argumentos
+ *
+ * `s` - Un `Option<&str>` que posiblemente contiene el nombre del cuarto al que se
+ *       quiere mandar el mensaje y el mensaje que se quiere enviar.
+ */
+fn mensaje_cuarto(s: Option<&str>) -> Result<Option<String>, ErrorCliente> {
+    let resto = match s {
+	None => return Err(CuartoFaltante),
+	Some(a) => a.trim(),
+    };
+    let mut iterator = resto.splitn(2, ' ');
+    let cuarto = iterator.next().unwrap();
+    if cuarto == "" { return Err(CuartoFaltante); }
+    if cuarto.chars().count() > 16 { return Err(NombreCuartoMuyLargo); }
+    match iterator.next() {
+	None => return Err(MensajeFaltante),
+	Some(a) => {
+	    match a.trim() {
+		"" => return Err(MensajeFaltante),
+		_ => return Ok(Some(room_text(cuarto.to_string(), a.trim().to_string()))),
+	    }
+	}
+    }
+}
+
+fn abandona(cuarto: Option<&str>) -> Result<Option<String>, ErrorCliente> {
+    let nom = match cuarto {
+	None => return Err(CuartoFaltante),
+	Some(a) => a.trim(),
+    };
+    if nom == "" { return Err(CuartoFaltante); }
+    if nom.chars().count() > 16 { return Err(NombreCuartoMuyLargo); }
+    Ok(Some(leave_room(nom.to_string())))
+}
+
+pub fn ayuda() {
+    let help = format!(
+	"{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+	"/status <estado>                          Cambia tu estado.",
+	"    estados: Activo (1), Ausente (2), Ocupado(3)",
+	"/msg <usuario> <mensaje>                  Envía un mensaje directo.",
+	"/users                                    Lista de usuarios conectados.",
+	"/room <cuarto>                            Crea el cuarto dado.",
+	"/join <cuarto>                            Se une al cuarto dado.",
+	"/roomusers <cuarto>                       Lista de usuarios del cuarto.",
+	"/invite <cuarto> <usuario> <usuario> ...  Invita al cuarto a los usuarios.",
+	"/roommsg <cuarto> <mensaje>               Envía un mensaje al cuarto.",
+	"/leave <cuarto>                           Abandona el cuarto.",
+	"/disconnect                               Desconecta del servidor",
+	"/help                                     Imprime este mensaje"
+    ).dimmed();
+    println!("{}", help);
+}

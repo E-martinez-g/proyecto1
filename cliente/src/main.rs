@@ -1,10 +1,8 @@
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, AsyncReadExt, BufReader, Lines, Stdin};
 use tokio::net::TcpStream;
-use tokio::select;
+use tokio;
 
 use protocolo::{*, Operacion::*, Resultado::*, ServerType, ServerType::*, mensajes_cliente::*};
-
-use colored::Colorize;
 
 use util::ErrorCliente::*;
 
@@ -21,7 +19,6 @@ async fn main() {
 	}
     };
     println!("[Sys] ¿Cuál es tu nombre?");
-    let nombre;
     loop {
 	match identificacion(&mut conexion, &mut entrada_estandar).await {
 	    Err(e) => {
@@ -34,14 +31,58 @@ async fn main() {
 	    },
 	    Ok(Response{ operation: Identify, result: b, extra: Some(n)}) => {
 		if matches!(b, Success) {
-		    nombre = n.clone();
 		    util::sistema(Response{operation: Identify, result: b, extra: Some(n)});
-		    println!("[Sys] ¡Hola, {}!", &nombre.bold());
 		    break;
 		}
 		util::sistema(Response{operation: Identify, result: b, extra: Some(n)});
 	    }
 	    _ => return,
+	}
+    }
+    loop {
+	tokio::select!{
+	    linea = entrada_estandar.next_line() => {
+		match linea {
+		    Err(e) => {
+			util::error(EntradaEstandar{ error: Some(e) });
+			break;
+		    }
+		    Ok(None) => {
+			util::error(EntradaEstandar{ error: None });
+			break;
+		    }
+		    Ok(Some(entrada)) => {
+			match util::maneja_stdin(entrada) {
+			    Err(e) => util::error(e),
+			    Ok(None) => {},
+			    Ok(Some(msg)) => {
+				if let Err(e) = util::envia(&mut conexion, msg).await {
+				    util::error(e);
+				    break;
+				}
+			    }
+			}
+		    }
+		}
+	    }
+	    recibido = util::recibe(&mut conexion) => {
+		match recibido {
+		    Err(e) => {
+			util::error(e);
+			break;
+		    },
+		    Ok(None) => break,
+		    Ok(Some(msg)) => {
+			match parsea_mensaje_servidor(msg) {
+			    Err(_) => {
+				util::error(Invalido);
+				break;
+			    },
+			    Ok(st) => util::sistema(st),
+			};
+		    },
+		}
+	    }
 	}
     }
 }
@@ -55,18 +96,22 @@ async fn identificacion(conexion: &mut TcpStream,
 	Ok(Some(l)) => l.trim().to_string(),
     };
     if line.is_empty() {
-	return Err(NombreVacio)
+	return Err(NombreVacio);
     }
-    if let Err(e) = conexion.write(&identify(&line).as_bytes()).await {
+    if line.chars().count() > 8 {
+	return Err(NombreMuyLargo);
+    }
+    if let Err(e) = conexion.write(&identify(line).as_bytes()).await {
 	return Err(Envio{ error: e });
     }
-    let mut buffer = [0u8; 1024];
+    let mut buffer = [0u8; 512];
     let n = match conexion.read(&mut buffer).await {
 	Ok(a) => a,
 	Err(e) => return Err(Recepcion{ error: e }),
     };
-    match parsea_mensaje_servidor(String::from_utf8_lossy(&buffer[..n])
-				  .to_string()) {
+    let a = String::from_utf8_lossy(&buffer[..n]).to_string();
+    let m = parsea_mensaje_servidor(a);
+    match m {
 	Ok(n @ Response { .. }) =>
 	    return Ok(n),
 	_ => return Err(Invalido),

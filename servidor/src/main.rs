@@ -187,10 +187,12 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 	};
 
 	match parsea_mensaje_cliente(rec) {
-	    Err(_) => return Err(Invalido{ direccion: *d,
-					   nombre: None }),
+	    Err(_) => return Err(Invalido{ direccion: *d, nombre: None }),
 	    
 	    Ok(Identify{ username: nom }) => {
+
+		if nom.chars().count() > 8 { return Err(NombreInvalido{ direccion: *d,
+									nombre: None}); }
 		
 		if USUARIOS.read().await.contains_key(&nom) {
 		    if let Err(e) = envia(d, ts, None, response_extra("IDENTIFY",
@@ -216,6 +218,7 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 	    },
 	}
     }
+    
 }
 
 /**
@@ -235,27 +238,55 @@ async fn maneja_solicitud(ct: ClientType, d: &SocketAddr, nom: &String)
 	Identify { .. } => return Err(Reidentify { direccion: *d,
 							    nombre: nom.clone() }),
 	Status { status: eu } => {
+	    let no_cambio = USUARIOS.read().await.get(nom).unwrap() == &eu;
+	    if no_cambio { return Ok(None); }
 	    USUARIOS.write().await.insert(nom.clone(), eu.clone());
 	    todos_menos(new_status(nom, &eu), nom).await;
 	},
 	
 	Users => return Ok(Some(user_list(&*USUARIOS.read().await))),
 	
-	Text { username: u, text: t } => return Ok(mensaje_privado(u, t, nom).await),
+	Text { username: u, text: t } => {
+	    if u.chars().count() > 16 { return Err(NombreInvalido{ direccion: *d,
+								    nombre: Some(nom.clone()) }); }
+	    return Ok(mensaje_privado(u, t, nom).await);
+	},
 	
 	PublicText { text: t } => { todos_menos(public_text_from(nom, t), nom).await; },
 
-	NewRoom { roomname: rn } => return Ok(Some(crea_cuarto(rn, nom).await)),
+	NewRoom { roomname: rn } => {
+	    if rn.chars().count() > 16 { return Err(NombreInvalido{ direccion: *d,
+								    nombre: Some(nom.clone()) }); }
+	    return Ok(Some(crea_cuarto(rn, nom).await));
+	},
 
-	Invite { roomname: rn, usernames: us } => return Ok(invitaciones(us, rn, nom).await),
+	Invite { roomname: rn, usernames: us } => {
+	    if rn.chars().count() > 16 { return Err(NombreInvalido{ direccion: *d,
+								    nombre: Some(nom.clone()) }); }
+	    return invitaciones(us, rn, nom, d).await;
+	},
 
-	JoinRoom { roomname: rn } => return Ok(Some(join_room(&rn, nom).await)),
+	JoinRoom { roomname: rn } =>{
+	    if rn.chars().count() > 16 { return Err(NombreInvalido{ direccion: *d,
+								    nombre: Some(nom.clone()) }); }
+	    return Ok(Some(join_room(&rn, nom).await));
+	},
 
-	RoomUsers { roomname: rn } => return Ok(Some(usuarios_cuarto(rn, nom).await)),
+	RoomUsers { roomname: rn } => {
+	    if rn.chars().count() > 16 { return Err(NombreInvalido{ direccion: *d,
+								    nombre: Some(nom.clone()) }); }
+	    return Ok(Some(usuarios_cuarto(rn, nom).await));
+	},
 
-	RoomText { roomname: rn, text: t } => return Ok(mensaje_cuarto(rn, t, nom).await),
+	RoomText { roomname: rn, text: t } => {
+	    if rn.chars().count() > 16 { return Err(NombreInvalido{ direccion: *d,
+								    nombre: Some(nom.clone()) }); }
+	    return Ok(mensaje_cuarto(rn, t, nom).await);
+	},
 
 	LeaveRoom { roomname: rn } => {
+	    if rn.chars().count() > 16 { return Err(NombreInvalido{ direccion: *d,
+								    nombre: Some(nom.clone()) }); }
 	    return Ok(abandonar_cuarto(rn, nom).await);
 	},
 	
@@ -357,20 +388,26 @@ async fn crea_cuarto(rn: String, nom: &String) -> String {
  * `rn` - El nombre del cuarto para el que son las invitaciones.
  * <br>
  * `nom` - El nombre del usuario que realiza la invitación.
+ * <br>
+ * `d` - La dirección IP del usuario que realiza la invitación.
  */
-async fn invitaciones(us: Vec<String>, rn: String, nom: &String) -> Option<String> {
+async fn invitaciones(us: Vec<String>, rn: String, nom: &String, d: &SocketAddr)
+		      ->  Result<Option<String>, ErrorServidor> {
     match CUARTOS.write().await.get_mut(&rn) {
-	None => return Some(response_extra("INVITE", "NO_SUCH_ROOM", &rn)),
+	None => return Ok(Some(response_extra("INVITE", "NO_SUCH_ROOM", &rn))),
 	Some(room) => {
-	    if !room.es_miembro(&nom) { return None; }
+	    if !room.es_miembro(&nom) { return Ok(None); }
 	    for user in us {
+		if user.chars().count() > 8 {
+		    return Err(NombreInvalido{ direccion: *d, nombre: Some(nom.clone()) });
+		}
 		if &user == nom ||
 		   room.es_invitado(&user) ||
 		   room.es_miembro(&user) { continue; }
 		
 		match CLIENTES.read().await.get(&user) {
 		    None => {
-			return Some(response_extra("INVITE", "NO_SUCH_USER", &user));
+			return Ok(Some(response_extra("INVITE", "NO_SUCH_USER", &user)));
 		    },
 		    Some(sender) => {
 			if let Err(_) = sender.send(invitation(nom, &rn)).await { continue; }
@@ -380,7 +417,7 @@ async fn invitaciones(us: Vec<String>, rn: String, nom: &String) -> Option<Strin
 	    }
 	},
     }
-    None
+    Ok(None)
 }
 
 /**
