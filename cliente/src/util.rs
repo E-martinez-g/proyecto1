@@ -1,6 +1,6 @@
 use protocolo::{ServerType, ServerType::*, EstadoUsuario, EstadoUsuario::*, Operacion::*, Resultado::*, mensajes_cliente::*};
 use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use std::io::Error;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, DefaultHasher};
@@ -57,10 +57,10 @@ pub async fn envia(ts: &mut TcpStream, msg: String) -> Result<(), ErrorCliente> 
  * <br>
  * `nom` - Posiblemente, el nombre con el que se identificó el usuario.
  */
-pub async fn recibe(ts: &mut TcpStream) -> Result<Option<String>, ErrorCliente> {
-    let mut buffer = [0u8; 512];
-
-    let n = match ts.read(&mut buffer).await {
+pub async fn recibe(ts: &mut TcpStream, buffer: &mut Vec<u8>)
+		    -> Result<Option<String>, ErrorCliente> {
+    buffer.resize(512, 0u8);
+    match ts.read_until(b'\0', buffer).await {
 	Ok(0) => return Ok(None),
 	Ok(a) => a,
 	Err(e) => {
@@ -69,7 +69,6 @@ pub async fn recibe(ts: &mut TcpStream) -> Result<Option<String>, ErrorCliente> 
     };
 
     let rec = String::from_utf8_lossy(&buffer[..n]).to_string();
-
     Ok(Some(rec))
 }
 
@@ -258,7 +257,7 @@ fn respuesta(r: ServerType) -> String {
 	Response{ operation: Invite, result: NoSuchUser, extra: Some(n) } =>
 	    format!("No se pudo invitar porque no existe un usuario con el nombre {}.", n),
 	Response{ operation: JoinRoom, result: Success, extra: Some(n) } =>
-	    format!("* Te unista al cuarto {}. *", colorea(n)),
+	    format!("* Te uniste al cuarto {}. *", colorea(n)),
 	Response{ operation: JoinRoom, result: NoSuchRoom, extra: Some(n) } =>
 	    format!("No pudiste unirte porque no existe un cuarto llamado {}.", n),
 	Response{ operation: JoinRoom, result: NotInvited, extra: Some(n) } =>
@@ -297,7 +296,7 @@ pub fn maneja_stdin(entrada: String) -> Result<Option<String>, ErrorCliente> {
 	"/invite" => return invita(iterador.next()),
 	"/roommsg" => return mensaje_cuarto(iterador.next()),
 	"/leave" => return abandona(iterador.next()),
-	"/desconecta" => return Ok(Some(disconnect())),
+	"/disconnect" => return Ok(Some(disconnect())),
 	"/help" => {
 	    ayuda();
 	    return Ok(None);},

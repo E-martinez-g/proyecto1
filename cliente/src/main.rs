@@ -19,8 +19,9 @@ async fn main() {
 	}
     };
     println!("[Sys] ¿Cuál es tu nombre?");
+    let mut buffer = [0u8;512];
     loop {
-	match identificacion(&mut conexion, &mut entrada_estandar).await {
+	match identificacion(&mut conexion, &mut entrada_estandar, &mut buffer).await {
 	    Err(e) => {
 		let mut esfatal = false;
 		if !matches!(e, NombreVacio) {
@@ -29,13 +30,14 @@ async fn main() {
 		util::error(e);
 		if esfatal { return; }
 	    },
-	    Ok(Response{ operation: Identify, result: b, extra: Some(n)}) => {
+	    Ok(Some(Response{ operation: Identify, result: b, extra: Some(n)})) => {
 		if matches!(b, Success) {
 		    util::sistema(Response{operation: Identify, result: b, extra: Some(n)});
 		    break;
 		}
 		util::sistema(Response{operation: Identify, result: b, extra: Some(n)});
 	    }
+	    Ok(None) => {},
 	    _ => return,
 	}
     }
@@ -65,7 +67,7 @@ async fn main() {
 		    }
 		}
 	    }
-	    recibido = util::recibe(&mut conexion) => {
+	    recibido = util::recibe(&mut conexion, &mut buffer) => {
 		match recibido {
 		    Err(e) => {
 			util::error(e);
@@ -78,7 +80,8 @@ async fn main() {
 				util::error(Invalido);
 				break;
 			    },
-			    Ok(st) => util::sistema(st),
+			    Ok(Some(st)) => util::sistema(st),
+			    Ok(None) => {},
 			};
 		    },
 		}
@@ -87,9 +90,8 @@ async fn main() {
     }
 }
 
-async fn identificacion(conexion: &mut TcpStream,
-			lineas: &mut Lines<BufReader<Stdin>>)
-			-> Result<ServerType, util::ErrorCliente> {
+async fn identificacion(conexion: &mut TcpStream, lineas: &mut Lines<BufReader<Stdin>>,
+			buffer: &mut [u8;512]) -> Result<Option<ServerType>, util::ErrorCliente> {
     let line = match lineas.next_line().await {
 	Err(e) => return Err(EntradaEstandar{ error: Some(e) }),
 	Ok(None) => return Err(EntradaEstandar{ error: None }),
@@ -104,16 +106,17 @@ async fn identificacion(conexion: &mut TcpStream,
     if let Err(e) = conexion.write(&identify(line).as_bytes()).await {
 	return Err(Envio{ error: e });
     }
-    let mut buffer = [0u8; 512];
-    let n = match conexion.read(&mut buffer).await {
+    buffer.fill(0u8);
+    let n = match conexion.read(buffer).await {
 	Ok(a) => a,
 	Err(e) => return Err(Recepcion{ error: e }),
     };
     let a = String::from_utf8_lossy(&buffer[..n]).to_string();
     let m = parsea_mensaje_servidor(a);
     match m {
-	Ok(n @ Response { .. }) =>
-	    return Ok(n),
+	Ok(Some(n @ Response { .. })) =>
+	    return Ok(Some(n)),
+	Ok(None) => Ok(None),
 	_ => return Err(Invalido),
     }
 }

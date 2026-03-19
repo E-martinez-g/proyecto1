@@ -91,6 +91,8 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 
     let (sender, mut receiver) = mpsc::channel::<String>(128);
     CLIENTES.write().await.insert(nom.clone(), sender);
+
+    let mut buffer = [0u8;512];
     
     loop {
 	tokio::select!{
@@ -109,7 +111,7 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 		    },
 		}
 	    }
-	    msg = recibe(&d, &mut ts, Some(&nom)) => {
+	    msg = recibe(&d, &mut ts, Some(&nom), &mut buffer) => {
 		match msg {
 		    Ok(None) => {
 			desconecta(&nom).await;
@@ -131,7 +133,7 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 				desconecta(&nom).await;
 				return;
 			    },
-			    Ok(ct) => {
+			    Ok(Some(ct)) => {
 				match maneja_solicitud(ct, &d, &nom).await {
 				    Ok(None) => {},
 				    Ok(Some(s)) => {
@@ -158,6 +160,7 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
 				    },
 				}
 			    },
+			    Ok(None) => {},
 			}
 		    },
 		}
@@ -178,9 +181,9 @@ async fn maneja_usuario(mut ts: TcpStream, d: SocketAddr) {
  */
 async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 			     -> Result<Option<String>, ErrorServidor> {
-
+    let mut buffer = [0u8;512];
     loop {
-	let rec = match recibe(d, ts, None).await {
+	let rec = match recibe(d, ts, None, &mut buffer).await {
 	    Ok(None) => return Ok(None),
 	    Err(e) => return Err(e),
 	    Ok(Some(msg)) => msg
@@ -189,7 +192,7 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 	match parsea_mensaje_cliente(rec) {
 	    Err(_) => return Err(Invalido{ direccion: *d, nombre: None }),
 	    
-	    Ok(Identify{ username: nom }) => {
+	    Ok(Some(Identify{ username: nom })) => {
 
 		if nom.chars().count() > 8 { return Err(NombreInvalido{ direccion: *d,
 									nombre: None}); }
@@ -209,7 +212,7 @@ async fn espera_identificacion(ts: &mut TcpStream, d: &SocketAddr)
 		}
 		return Ok(Some(nom));
 	    },
-
+	    Ok(None) => {},
 	    Ok(_) => {
 		if let Err(e) = envia(d, ts, None, response("INVALID",
 							    "NOT_IDENTIFIED")).await {

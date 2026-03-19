@@ -44,11 +44,10 @@ pub async fn envia(d: &SocketAddr, ts: &mut TcpStream, nom: Option<&String>, msg
  * <br>
  * `nom` - Posiblemente, el nombre con el que se identificó el usuario.
  */
-pub async fn recibe(d: &SocketAddr, ts: &mut TcpStream, nom: Option<&String>)
+pub async fn recibe(d: &SocketAddr, ts: &mut TcpStream, nom: Option<&String>, buffer: &mut [u8;512])
 		    -> Result<Option<String>, ErrorServidor> {
-    let mut buffer = [0u8; 512];
-
-    let n = match ts.read(&mut buffer).await {
+    buffer.fill(0u8);
+    let n = match ts.read(buffer).await {
 	Ok(0) => return Ok(None),
 	Ok(a) => a,
 	Err(e) => {

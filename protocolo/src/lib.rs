@@ -147,8 +147,9 @@ pub enum ServerType {
  *         seriado a buscar.
  */
 pub fn parsea_mensaje_cliente(ser: String)
-			      -> Result<ClientType, serde_json::Error> {
-    serde_json::from_str(&ser)
+			      -> Result<Option<ClientType>, serde_json::Error> {
+    if ser.trim().is_empty() { return Ok(None) }
+    serde_json::from_str(ser.trim_end_matches('\0'))
 }
 
 /**
@@ -161,8 +162,9 @@ pub fn parsea_mensaje_cliente(ser: String)
  *         seriado a buscar.
  */
 pub fn parsea_mensaje_servidor(ser: String)
-			       -> Result<ServerType, serde_json::Error> {
-    serde_json::from_str(&ser)
+			       -> Result<Option<ServerType>, serde_json::Error> {
+    if ser.trim().is_empty() { return Ok(None) }
+    serde_json::from_str(ser.trim_end_matches('\0'))
 }
 
 /**
