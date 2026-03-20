@@ -72,7 +72,7 @@ pub enum Resultado {
  * Enumeración para el "type" de los mensajes que
  * envía el cliente.
  */
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq, Debug)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ClientType {
     
@@ -105,7 +105,7 @@ pub enum ClientType {
  * Enumeración para el "type" de los mensajes que
  * envía el servidor.
  */
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, PartialEq, Debug)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ServerType {
     
