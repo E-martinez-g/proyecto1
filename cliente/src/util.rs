@@ -218,6 +218,10 @@ fn respuesta(r: ServerType) -> String {
 	    format!("No se pudo obtener la lista de miembros porque {} no existe.", n),
 	Response{ operation: RoomUsers, result: NotJoined, extra: Some(n) } =>
 	    format!("No se pudo obtener la lista de miembros porque no estás en {}.", colorea(n)),
+	Response{ operation: RoomText, result: NoSuchRoom, extra: Some(n) } =>
+	    format!("No se pudo mandar el mensaje porque {} no existe.", n),
+	Response{ operation: RoomText, result: NotJoined, extra: Some(n) } =>
+	    format!("No se pudo mandar el mensaje porque no estás en {}.", colorea(n)),
 	Response{ operation: LeaveRoom, result: NoSuchRoom, extra: Some(n) } =>
 	    format!("No pudiste abandonar el cuarto {} porque no existe", n),
 	Response{ operation: LeaveRoom, result: NotJoined, extra: Some(n) } =>

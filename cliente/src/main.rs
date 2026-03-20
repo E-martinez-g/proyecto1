@@ -151,7 +151,7 @@ async fn main() {
 			}
 		    }
 		}
-	    }
+	    },
 	    recibido = cliente.lector.read_until(b'\0', &mut cliente.buffer) => {
 		match recibido {
 		    Ok(0) => {},
@@ -172,11 +172,22 @@ async fn main() {
 			}
 		    }
 		}
-	    }
+	    },
+	    _ = tokio::signal::ctrl_c() => {
+		_ = cliente.servidor_out(disconnect()).await;
+		return;
+	    },
 	}
     }
 }
 
+/**
+ * Obliga al usuario a que se identifique.
+ *
+ * # Argumentos
+ *
+ * `cliente` - El `Cliente` para manejar toda la comunicación.
+ */
 async fn identifica(cliente: &mut Cliente) -> Result<Option<ServerType>,
 						     ErrorCliente> {
     let nombre: String = match cliente.usuario_in().await {

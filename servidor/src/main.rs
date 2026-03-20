@@ -4,16 +4,12 @@ use tokio::sync::{RwLock, mpsc};
 use std::net::SocketAddr;
 use tokio::net::{TcpStream, TcpListener};
 
-use protocolo::mensajes_servidor::*;
-use protocolo::EstadoUsuario::*;
-use protocolo::ClientType::*;
-use protocolo::*;
+use protocolo::{mensajes_servidor::*, EstadoUsuario::*, ClientType::*, *};
 
 use std::collections::HashMap;
 use std::option::Option;
 
-use bitacora::ErrorServidor::*;
-use bitacora::*;
+use bitacora::{*, ErrorServidor::*};
 
 use util::*;
 
@@ -47,12 +43,20 @@ async fn main() {
     };
     
     loop {
-	match servidor.accept().await {
-	    Ok((stream, direccion)) => {
-		tokio::spawn(maneja_usuario(stream, direccion));
-	    }
-	    Err(e) => {
-		bitacora::error(Aceptacion { error: e });
+	tokio::select! {
+	    result = servidor.accept() => {
+		match result {
+		    Ok((stream, direccion)) => {
+			tokio::spawn(maneja_usuario(stream, direccion));
+		    }
+		    Err(e) => {
+			bitacora::error(Aceptacion { error: e });
+		    }
+		}
+	    },
+	    _ = tokio::signal::ctrl_c() => {
+		println!("** TERMINANDO LA EJECUCIÓN DEL SERVIDOR.");
+		return;
 	    }
 	}
     }
@@ -321,6 +325,7 @@ async fn join_room(rn: &String, nom: &String) -> String {
 	    }
 	},
     }
+    todos_menos_cuarto(joined_room(rn, nom), rn, nom).await;
     response_extra("JOIN_ROOM", "SUCCESS", &rn)
 }
 
