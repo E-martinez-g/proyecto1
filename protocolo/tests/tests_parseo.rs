@@ -359,10 +359,108 @@ fn test_parsea_mensaje_servidor_disconnected() {
 
 #[test]
 fn test_parsea_mensaje_servidor_response() {
-
+    for o in OPERACIONES {
+	for r in RESULTADOS {
+	    let opr = match o {
+		Identify => "IDENTIFY",
+		Text => "TEXT",
+		NewRoom => "NEW_ROOM",
+		Invite => "INVITE",
+		JoinRoom => "JOIN_ROOM",
+		RoomUsers => "ROOM_USERS",
+		RoomText => "ROOM_TEXT",
+		LeaveRoom => "LEAVE_ROOM",
+		Operacion::Invalid => "INVALID",
+	    };
+	    let res = match r {
+		Success => "SUCCESS",
+		UserAlreadyExists => "USER_ALREADY_EXISTS",
+		NoSuchUser => "NO_SUCH_USER",
+		RoomAlreadyExists => "ROOM_ALREADY_EXISTS",
+		NoSuchRoom => "NO_SUCH_ROOM",
+		NotInvited => "NOT_INVITED",
+		NotJoined => "NOT_JOINED",
+		NotIdentified => "NOT_IDENTIFIED",
+		Resultado::Invalid => "INVALID",
+	    };
+	    let response = match parsea_mensaje_servidor(response(opr, res)) {
+		Err(_) => panic!("No pudo parsear."),
+		Ok(None) => panic!("No parseo nada."),
+		Ok(Some(st)) => st,
+	    };
+	    assert_eq!(Response{ operation: o, result: r, extra: None }, response);
+	}
+    }
 }
 
 #[test]
 fn test_parsea_mensaje_servidor_response_extra() {
-
+    for u in NOMBRES {
+	for o in OPERACIONES {
+	    for r in RESULTADOS {
+		let opr = match o {
+		    Identify => "IDENTIFY",
+		    Text => "TEXT",
+		    NewRoom => "NEW_ROOM",
+		    Invite => "INVITE",
+		    JoinRoom => "JOIN_ROOM",
+		    RoomUsers => "ROOM_USERS",
+		    RoomText => "ROOM_TEXT",
+		    LeaveRoom => "LEAVE_ROOM",
+		    Operacion::Invalid => "INVALID",
+		};
+		let res = match r {
+		    Success => "SUCCESS",
+		    UserAlreadyExists => "USER_ALREADY_EXISTS",
+		    NoSuchUser => "NO_SUCH_USER",
+		    RoomAlreadyExists => "ROOM_ALREADY_EXISTS",
+		    NoSuchRoom => "NO_SUCH_ROOM",
+		    NotInvited => "NOT_INVITED",
+		    NotJoined => "NOT_JOINED",
+		    NotIdentified => "NOT_IDENTIFIED",
+		    Resultado::Invalid => "INVALID",
+		};
+		let response = match parsea_mensaje_servidor(response_extra(opr, res, &u.to_string())) {
+		    Err(_) => panic!("No pudo parsear."),
+		    Ok(None) => panic!("No parseo nada."),
+		    Ok(Some(st)) => st,
+		};
+		assert_eq!(Response{ operation: o, result: r, extra: Some(u.to_string()) }, response);
+	    }
+	}
+    }
+    for c in CUARTOS {
+	for o in OPERACIONES {
+	    for r in RESULTADOS {
+		let opr = match o {
+		    Identify => "IDENTIFY",
+		    Text => "TEXT",
+		    NewRoom => "NEW_ROOM",
+		    Invite => "INVITE",
+		    JoinRoom => "JOIN_ROOM",
+		    RoomUsers => "ROOM_USERS",
+		    RoomText => "ROOM_TEXT",
+		    LeaveRoom => "LEAVE_ROOM",
+		    Operacion::Invalid => "INVALID",
+		};
+		let res = match r {
+		    Success => "SUCCESS",
+		    UserAlreadyExists => "USER_ALREADY_EXISTS",
+		    NoSuchUser => "NO_SUCH_USER",
+		    RoomAlreadyExists => "ROOM_ALREADY_EXISTS",
+		    NoSuchRoom => "NO_SUCH_ROOM",
+		    NotInvited => "NOT_INVITED",
+		    NotJoined => "NOT_JOINED",
+		    NotIdentified => "NOT_IDENTIFIED",
+		    Resultado::Invalid => "INVALID",
+		};
+		let response = match parsea_mensaje_servidor(response_extra(opr, res, &c.to_string())) {
+		    Err(_) => panic!("No pudo parsear."),
+		    Ok(None) => panic!("No parseo nada."),
+		    Ok(Some(st)) => st,
+		};
+		assert_eq!(Response{ operation: o, result: r, extra: Some(c.to_string()) }, response);
+	    }
+	}
+    }
 }
