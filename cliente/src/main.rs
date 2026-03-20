@@ -1,65 +1,150 @@
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, AsyncReadExt, BufReader, Lines, Stdin};
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, Stdin};
 use tokio::net::TcpStream;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio;
 
 use protocolo::{*, Operacion::*, Resultado::*, ServerType, ServerType::*, mensajes_cliente::*};
 
-use util::ErrorCliente::*;
+use util::ErrorCliente::{self, *};
+
+/**
+ * Maneja la comunicación con el usuario y con el servidor.
+ *
+ * # Campos
+ *
+ * `usuario` - La entrada estándar para recibir solicitudes del usuario. <br>
+ * `buffer` - El `Vec<u8>` para recibir información del servidor. <br>
+ * `lector` - Un `BufReader` con la `OwnedReadHalf` para recibir información del
+ *            servidor. <br>
+ * `escritor` - La `OwnedWriteHalf` para mandar información al servidor.
+ */
+struct Cliente {
+    usuario: Lines<BufReader<Stdin>>,
+    buffer: Vec<u8>,
+    lector: BufReader<OwnedReadHalf>,
+    escritor: OwnedWriteHalf,
+}
+
+impl Cliente {
+
+    /**
+     * Crea un nuevo cliente a partir de la conexión con el servidor.
+     *
+     * # Argumentos
+     *
+     * `conexion` - El `TcpStream` para comunicarse con el servidor.
+     */
+    fn new(conexion: TcpStream) -> Self {
+	let (l, e) = conexion.into_split();
+	Cliente {
+	    usuario: BufReader::new(io::stdin()).lines(),
+	    buffer: vec![0u8;512],
+	    lector: BufReader::new(l),
+	    escritor: e,
+	}
+    }
+
+    /**
+     * Obtiene lo que el usuario ingrese en la entrada estándar.
+     */
+    async fn usuario_in(&mut self) -> Result<String, ErrorCliente> {
+	match self.usuario.next_line().await {
+	    Err(e) => return Err(EntradaEstandar{ error: Some(e) }),
+	    Ok(None) => return Err(EntradaEstandar{ error: None }),
+	    Ok(Some(l)) => return Ok(l.trim().to_string()),
+	}
+    }
+
+    /**
+     * Obtiene lo que el servidor envíe.
+     */
+    async fn servidor_in(&mut self) -> Result<Option<String>, ErrorCliente> {
+	self.buffer.clear();
+	let n = match self.lector.read_until(b'\0', &mut self.buffer).await {
+	    Ok(0) => return Ok(None),
+	    Ok(a) => a,
+	    Err(e) => return Err(Recepcion{ error: e }),
+	};
+	if n > 512 { return Ok(None); }
+	let rec = String::from_utf8_lossy(&self.buffer[..n]);
+	Ok(Some(rec.trim_end_matches('\0').to_string()))
+    }
+
+    /**
+     * Envia un mensaje al servidor.
+     *
+     * # Argumentos
+     *
+     * `msg` - Un `String` con el mensaje a enviar.
+     */
+    async fn servidor_out(&mut self, msg: String) -> Result<(), ErrorCliente> {
+	if let Err(e) = self.escritor.write(msg.as_bytes()).await {
+	    return Err(Envio{ error: e });
+	}
+	Ok(())
+    }
+}
 
 #[tokio::main]
 async fn main() {
-    let mut entrada_estandar = BufReader::new(io::stdin()).lines();
-    
-    let direccion_servidor = server_address();
-    let mut conexion = match TcpStream::connect(&direccion_servidor).await {
+    let conexion = match TcpStream::connect(&server_address()).await {
 	Ok(stream) => stream,
 	Err(e) => {
-	    util::error(Conexion{ error: e, direccion: direccion_servidor });
+	    println!("{}", util::error(Conexion{ error: e,
+						 direccion: server_address() }));
 	    return;
 	}
     };
+    let mut cliente = Cliente::new(conexion);
     println!("[Sys] ¿Cuál es tu nombre?");
-    let mut buffer = [0u8;512];
     loop {
-	match identificacion(&mut conexion, &mut entrada_estandar, &mut buffer).await {
+	match identifica(&mut cliente).await {
 	    Err(e) => {
-		let mut esfatal = false;
-		if !matches!(e, NombreVacio) {
-		    esfatal = true;
+		if !matches!(e, NombreVacio | NombreMuyLargo) {
+		    println!("{}", util::error(e));
+		    return;
 		}
-		util::error(e);
-		if esfatal { return; }
+		println!("{}", util::error(e));
 	    },
-	    Ok(Some(Response{ operation: Identify, result: b, extra: Some(n)})) => {
+	    Ok(Some(Response{ operation: Identify,
+			      result: b,
+			      extra: Some(n)})) => {
 		if matches!(b, Success) {
-		    util::sistema(Response{operation: Identify, result: b, extra: Some(n)});
+		    println!("{}", util::sistema(Response{operation: Identify,
+							  result: b,
+							  extra: Some(n)}));
 		    break;
 		}
-		util::sistema(Response{operation: Identify, result: b, extra: Some(n)});
+		println!("{}", util::sistema(Response{operation: Identify,
+						      result: b,
+						      extra: Some(n)}));
 	    }
 	    Ok(None) => {},
 	    _ => return,
 	}
     }
     loop {
+	cliente.buffer.clear();
 	tokio::select!{
-	    linea = entrada_estandar.next_line() => {
+	    linea = cliente.usuario.next_line() => {
 		match linea {
 		    Err(e) => {
-			util::error(EntradaEstandar{ error: Some(e) });
+			println!("{}",
+				 util::error(EntradaEstandar{ error: Some(e) }));
 			break;
-		    }
+		    },
 		    Ok(None) => {
-			util::error(EntradaEstandar{ error: None });
+			println!("{}",
+				 util::error(EntradaEstandar{ error: None }));
 			break;
-		    }
+		    },
 		    Ok(Some(entrada)) => {
-			match util::maneja_stdin(entrada) {
-			    Err(e) => util::error(e),
+			match util::maneja_stdin(entrada.trim().to_string()) {
+			    Err(e) => println!("{}", util::error(e)),
 			    Ok(None) => {},
 			    Ok(Some(msg)) => {
-				if let Err(e) = util::envia(&mut conexion, msg).await {
-				    util::error(e);
+				if let Err(e) = cliente.servidor_out(msg).await {
+				    println!("{}", util::error(e));
 				    break;
 				}
 			    }
@@ -67,53 +152,52 @@ async fn main() {
 		    }
 		}
 	    }
-	    recibido = util::recibe(&mut conexion, &mut buffer) => {
+	    recibido = cliente.lector.read_until(b'\0', &mut cliente.buffer) => {
 		match recibido {
+		    Ok(0) => {},
 		    Err(e) => {
-			util::error(e);
+			println!("{}", util::error(Recepcion{ error: e }));
 			break;
 		    },
-		    Ok(None) => break,
-		    Ok(Some(msg)) => {
-			match parsea_mensaje_servidor(msg) {
+		    Ok(n) => {
+			if n > 512 { break; }
+			let rec = String::from_utf8_lossy(&cliente.buffer[..n]);
+			match parsea_mensaje_servidor(rec.to_string()) {
 			    Err(_) => {
-				util::error(Invalido);
+				println!("{}", util::error(Invalido));
 				break;
-			    },
-			    Ok(Some(st)) => util::sistema(st),
+			    }
 			    Ok(None) => {},
-			};
-		    },
+			    Ok(Some(st)) => println!("{}", util::sistema(st)),
+			}
+		    }
 		}
 	    }
 	}
     }
 }
 
-async fn identificacion(conexion: &mut TcpStream, lineas: &mut Lines<BufReader<Stdin>>,
-			buffer: &mut [u8;512]) -> Result<Option<ServerType>, util::ErrorCliente> {
-    let line = match lineas.next_line().await {
-	Err(e) => return Err(EntradaEstandar{ error: Some(e) }),
-	Ok(None) => return Err(EntradaEstandar{ error: None }),
-	Ok(Some(l)) => l.trim().to_string(),
+async fn identifica(cliente: &mut Cliente) -> Result<Option<ServerType>,
+						     ErrorCliente> {
+    let nombre: String = match cliente.usuario_in().await {
+	Err(e) => return Err(e),
+	Ok(l) => l,
     };
-    if line.is_empty() {
+    if nombre.is_empty() {
 	return Err(NombreVacio);
     }
-    if line.chars().count() > 8 {
+    if nombre.chars().count() > 8 {
 	return Err(NombreMuyLargo);
     }
-    if let Err(e) = conexion.write(&identify(line).as_bytes()).await {
-	return Err(Envio{ error: e });
+    if let Err(e) = cliente.servidor_out(identify(nombre)).await {
+	return Err(e);
     }
-    buffer.fill(0u8);
-    let n = match conexion.read(buffer).await {
-	Ok(a) => a,
-	Err(e) => return Err(Recepcion{ error: e }),
+    let recibido = match cliente.servidor_in().await {
+	Ok(None) => return Ok(None),
+	Ok(Some(rec)) => rec,
+	Err(e) => return Err(e),
     };
-    let a = String::from_utf8_lossy(&buffer[..n]).to_string();
-    let m = parsea_mensaje_servidor(a);
-    match m {
+    match parsea_mensaje_servidor(recibido) {
 	Ok(Some(n @ Response { .. })) =>
 	    return Ok(Some(n)),
 	Ok(None) => Ok(None),

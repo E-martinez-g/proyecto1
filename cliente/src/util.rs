@@ -1,6 +1,4 @@
 use protocolo::{ServerType, ServerType::*, EstadoUsuario, EstadoUsuario::*, Operacion::*, Resultado::*, mensajes_cliente::*};
-use tokio::net::TcpStream;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use std::io::Error;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, DefaultHasher};
@@ -9,7 +7,7 @@ use crate::util::ErrorCliente::*;
 
 /**
  * Enumeración para los errores que pueden ocurrir en el cliente.
- */
+  */
 pub enum ErrorCliente {
     NombreVacio,
     NombreMuyLargo,
@@ -27,59 +25,13 @@ pub enum ErrorCliente {
 }
 
 /**
- * Envía un mensaje al servidor.
- *
- * # Argumentos
- *
- * `d` - La dirección IP del cliente al que se enviará el mensaje.
- * <br>
- * `ts` - La conexión con el cliente.
- * <br>
- * `nom` - Posiblemente, el nombre con el que se identificó el usuario.
- * <br>
- * `msg` - Un String con el mensaje a enviar al cliente
- */
-pub async fn envia(ts: &mut TcpStream, msg: String) -> Result<(), ErrorCliente> {
-    if let Err(e) = ts.write(msg.as_bytes()).await {
-	return Err(Envio { error: e });
-    }
-    Ok(())
-}
-
-/**
- * Recibe un mensaje de un cliente y lo registra en la bitácora.
- *
- * # Argumentos
- *
- * `d` - La dirección IP del cliente que envió el mensaje.
- * <br>
- * `ts` - La conexión con el cliente.
- * <br>
- * `nom` - Posiblemente, el nombre con el que se identificó el usuario.
- */
-pub async fn recibe(ts: &mut TcpStream, buffer: &mut Vec<u8>)
-		    -> Result<Option<String>, ErrorCliente> {
-    buffer.resize(512, 0u8);
-    match ts.read_until(b'\0', buffer).await {
-	Ok(0) => return Ok(None),
-	Ok(a) => a,
-	Err(e) => {
-	    return Err(Recepcion {error: e })
-	}
-    };
-
-    let rec = String::from_utf8_lossy(&buffer[..n]).to_string();
-    Ok(Some(rec))
-}
-
-/**
- * Imprime de forma legible el error ocurrido.
+ * Da una cadena que explica de forma legible el error ocurrido.
  *
  * # Argumentos
  *
  * `err` - El error que se quiere imprimir.
  */
-pub fn error(err: ErrorCliente) {
+pub fn error(err: ErrorCliente) -> String {
     let mut s = String::from("[Sys] ");
     match err {
 	NombreVacio =>
@@ -112,17 +64,17 @@ pub fn error(err: ErrorCliente) {
 	EntradaEstandar{ error: Some(e) } =>
 	    s += &format!("Ocurrió un error en la entrada estándar. {}", e),
     }
-    println!("{}", s);
+    s
 }
 
 /**
- * Imprime un mensaje del servidor.
+ * Da una cadena que representa de forma legible un mensaje del servidor.
  *
  * # Argumentos
  *
  * `st` - El tipo del mensaje del servidor.
  */
-pub fn sistema(st: ServerType) {
+pub fn sistema(st: ServerType) -> String {
     let msg = match st {
 	r @ Response{..} => respuesta(r),
 	
@@ -171,7 +123,7 @@ pub fn sistema(st: ServerType) {
 	    format!("* {} abandonó la conversación. *\n",
 		    colorea(u)).dimmed().to_string(),
     };
-    print!("{}", msg);
+    msg
 }
 
 /**

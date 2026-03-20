@@ -148,8 +148,12 @@ pub enum ServerType {
  */
 pub fn parsea_mensaje_cliente(ser: String)
 			      -> Result<Option<ClientType>, serde_json::Error> {
-    if ser.trim().is_empty() { return Ok(None) }
-    serde_json::from_str(ser.trim_end_matches('\0'))
+    let limpia = ser.trim_end_matches('\0').trim();
+    if limpia.is_empty() { return Ok(None); }
+    match serde_json::from_str(limpia) {
+	Err(e) => return Err(e),
+	Ok(s) => return Ok(Some(s)),
+    }
 }
 
 /**
@@ -163,8 +167,12 @@ pub fn parsea_mensaje_cliente(ser: String)
  */
 pub fn parsea_mensaje_servidor(ser: String)
 			       -> Result<Option<ServerType>, serde_json::Error> {
-    if ser.trim().is_empty() { return Ok(None) }
-    serde_json::from_str(ser.trim_end_matches('\0'))
+    let limpia = ser.trim_end_matches('\0').trim();
+    if limpia.is_empty() { return Ok(None); }
+    match serde_json::from_str(limpia) {
+	Err(e) => return Err(e),
+	Ok(s) => return Ok(Some(s)),
+    }
 }
 
 /**
