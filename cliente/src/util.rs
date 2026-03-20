@@ -96,7 +96,7 @@ pub fn sistema(st: ServerType) -> String {
 
 	UserList{ users: us } => lista(us),
 
-	TextFrom { username: u, text: t } =>
+	TextFrom{ username: u, text: t } =>
 	    format!("[{} (MD)] {}\n", colorea(u), t),
 	
 	PublicTextFrom{ username: u, text: t } =>
@@ -199,7 +199,7 @@ fn respuesta(r: ServerType) -> String {
 	Response{ operation: Identify, result: UserAlreadyExists, extra: Some(n) } =>
 	    format!("Ya existe un usuario con el nombre {}.", colorea(n)),
 	Response{ operation: Text, result: NoSuchUser, extra: Some(n) } =>
-	    format!("No existe un usuario con el nombre {}.", n),
+	    format!("No se pudo enviar el mensaje porque no existe el usuario {}.", n),
 	Response{ operation: NewRoom, result: Success, extra: Some(n) } =>
 	    format!("* Se creó con éxito el cuarto {}. *", colorea(n)),
 	Response{ operation: NewRoom, result: RoomAlreadyExists, extra: Some(n) } =>
@@ -456,4 +456,237 @@ pub fn ayuda() {
 	"/help                                     Imprime este mensaje"
     ).dimmed();
     println!("{}", help);
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use strip_ansi_escapes::strip_str;
+    
+    const NOMBRES: [&str; 28] = ["Alicia", "Beto", "Carlos", "David", "Emilio",
+				 "Felipe", "Gabriel", "Helena", "Isabel", "Juan",
+				 "Karen", "Luana", "Lizandro", "Miguel", "Nicholas",
+				 "Ñoño", "Odette", "Paulina", "Queta", "Renata",
+				 "Sara", "Tamara", "Ulises", "Victoria", "Wanda",
+				 "Ximena", "Yair", "Zair"];
+
+    const CUARTOS: [&str; 14] = ["Sala 1", "Cuartito", "Diversión", "Seriedad",
+				 "TCG", "Gente Normal", "Cuarto", "Problemas",
+				 "Estudio", "Ayuda", "Juegos", "Arte", "Música",
+				 "Secreto"];
+
+    const MENSAJES: [&str; 7] = ["¿Cómo estás?", "¿Qué haces?", "¡Buenos días!",
+				 "Necesito ayuda.", "Estoy preocupado.", "¡Hola!",
+				 "Voy a reprobar."];
+    
+    #[test]
+    fn test_sistema_new_user() {
+	for u in NOMBRES {
+	    let p = format!("* {} se unió a la conversación. *\n", u);
+	    let nu = NewUser{ username: u.to_string() };
+	    assert_eq!(p, strip_str(sistema(nu)));
+	}
+    }
+
+    #[test]
+    fn test_sistema_new_status() {
+	for u in NOMBRES {
+	    let pac = format!("* {} cambió su estado a {} *\n", u, "Activo");
+	    let paw = format!("* {} cambió su estado a {} *\n", u, "Ausente");
+	    let pb = format!("* {} cambió su estado a {} *\n", u, "Ocupado");
+	    let nsac = NewStatus{ username: u.to_string(), status: Active };
+	    let nsaw = NewStatus{ username: u.to_string(), status: Away };
+	    let nsb = NewStatus{ username: u.to_string(), status: Busy };
+	    assert_eq!(pac, strip_str(sistema(nsac)));
+	    assert_eq!(paw, strip_str(sistema(nsaw)));
+	    assert_eq!(pb, strip_str(sistema(nsb)));
+	}
+    }
+
+    #[test]
+    fn test_sistema_user_list() {
+	for u in NOMBRES {
+	    let pac = format!("• {}: Activo\n", u);
+	    let paw = format!("• {}: Ausente\n", u);
+	    let pb = format!("• {}: Ocupado\n", u);
+	    let unoac = HashMap::from([(u.to_string(), Active)]);
+	    let unoaw = HashMap::from([(u.to_string(), Away)]);
+	    let unob = HashMap::from([(u.to_string(), Busy)]);
+	    assert_eq!(pac, strip_str(sistema(UserList{ users: unoac })));
+	    assert_eq!(paw, strip_str(sistema(UserList{ users: unoaw })));
+	    assert_eq!(pb, strip_str(sistema(UserList{ users: unob })));
+	}
+	for a in NOMBRES {
+	    for b in NOMBRES {
+		for c in NOMBRES {
+		    if a == b || b == c || a == c { continue; }
+		    let p3_1 = format!("• {}: Activo\n• {}: Activo\n• {}: Activo\n", a, b, c);
+		    let p3_2 = format!("• {}: Activo\n• {}: Activo\n• {}: Activo\n", a, c, b);
+		    let p3_3 = format!("• {}: Activo\n• {}: Activo\n• {}: Activo\n", b, a, c);
+		    let p3_4 = format!("• {}: Activo\n• {}: Activo\n• {}: Activo\n", b, c, a);
+		    let p3_5 = format!("• {}: Activo\n• {}: Activo\n• {}: Activo\n", c, a, b);
+		    let p3_6 = format!("• {}: Activo\n• {}: Activo\n• {}: Activo\n", c, b, a);
+		    let tres = HashMap::from([(a.to_string(), Active),
+					      (b.to_string(), Active),
+					      (c.to_string(), Active)]);
+		    let res = strip_str(sistema(UserList{ users: tres }));
+		    if res != p3_1 && res != p3_2 && res != p3_3 && res != p3_4 && res != p3_5 && res != p3_6 {
+			panic!("No fue ninguna.")
+		    }
+		}
+	    }
+	}
+    }
+
+    #[test]
+    fn test_sistema_text_from() {
+	for u in NOMBRES {
+	    for m in MENSAJES {
+		let p = format!("[{} (MD)] {}\n", u, m);
+		let tf = TextFrom{ username: u.to_string(), text: m.to_string()};
+		assert_eq!(p, strip_str(sistema(tf)));
+	    }
+	}
+    }
+
+    #[test]
+    fn test_sistema_public_text_from() {
+	for u in NOMBRES {
+	    for m in MENSAJES {
+		let p = format!("[{}] {}\n", u, m);
+		let ptf = PublicTextFrom{ username: u.to_string(), text: m.to_string()};
+		assert_eq!(p, strip_str(sistema(ptf)));
+	    }
+	}
+    }
+
+    #[test]
+    fn test_sistema_invitation() {
+	for u in NOMBRES {
+	    for c in CUARTOS {
+		let p = format!("* {} te invitó al cuarto {}. *\n", u, c);
+		let i = Invitation{ username: u.to_string(), roomname: c.to_string() };
+		assert_eq!(p, strip_str(sistema(i)));
+	    }
+	}
+    }
+    #[test]
+    fn test_sistema_joined_room() {
+	for c in CUARTOS {
+	    for u in NOMBRES {
+		let p = format!("* {} se unió al cuarto {}. *\n", u, c);
+		let jr = JoinedRoom{ roomname: c.to_string(), username: u.to_string() };
+		assert_eq!(p, strip_str(sistema(jr)));
+	    }
+	}
+    }
+
+    #[test]
+    fn test_sistema_room_user_list() {
+	for r in CUARTOS {
+	    for u in NOMBRES {
+		let pac = format!("Miembros de {}:\n• {}: Activo\n", r, u);
+		let paw = format!("Miembros de {}:\n• {}: Ausente\n", r, u);
+		let pb = format!("Miembros de {}:\n• {}: Ocupado\n", r, u);
+		let unoac = HashMap::from([(u.to_string(), Active)]);
+		let unoaw = HashMap::from([(u.to_string(), Away)]);
+		let unob = HashMap::from([(u.to_string(), Busy)]);
+		assert_eq!(pac, strip_str(sistema(RoomUserList{ roomname: r.to_string(), users: unoac })));
+		assert_eq!(paw, strip_str(sistema(RoomUserList{ roomname: r.to_string(), users: unoaw })));
+		assert_eq!(pb, strip_str(sistema(RoomUserList{ roomname: r.to_string(), users: unob })));
+	    }
+	}
+    }
+
+    #[test]
+    fn test_sistema_room_text_from() {
+	for c in CUARTOS {
+	    for u in NOMBRES {
+		for m in MENSAJES {
+		    let p = format!("[{} @ {}] {}\n", u, c, m); // youtube.com/watch?v=399Ez7WHK5s
+		    let rtf = RoomTextFrom{ roomname: c.to_string(),
+					    username: u.to_string(),
+					    text: m.to_string() };
+		    assert_eq!(p, strip_str(sistema(rtf)));
+		}
+	    }
+	}
+    }
+
+    #[test]
+    fn test_sistema_left_room() {
+	for c in CUARTOS {
+	    for u in NOMBRES {
+		let p = format!("* {} abandonó el cuarto {}. *\n", u, c);
+		let lr = LeftRoom{ roomname: c.to_string(), username: u.to_string() };
+		assert_eq!(p, strip_str(sistema(lr)));
+	    }
+	}
+    }
+
+    #[test]
+    fn test_sistema_disconnected() {
+	for u in NOMBRES {
+	    let p = format!("* {} abandonó la conversación. *\n", u);
+	    let d = Disconnected{ username: u.to_string() };
+	    assert_eq!(p, strip_str(sistema(d)));
+	}
+    }
+
+    #[test]
+    fn test_sistema_response() {
+	for u in NOMBRES {
+	    let rids = Response{ operation: Identify, result: Success, extra: Some(u.to_string()) };
+	    let ridu = Response{ operation: Identify, result: UserAlreadyExists, extra: Some(u.to_string()) };
+	    let rtn = Response{ operation: Text, result: NoSuchUser, extra: Some(u.to_string()) };
+	    let rinu = Response{ operation: Invite, result: NoSuchUser, extra: Some(u.to_string()) };
+	    let pids = format!("* Te identificaste como {}. *\n", u);
+	    let pidu = format!("Ya existe un usuario con el nombre {}.\n", u);
+	    let ptn = format!("No se pudo enviar el mensaje porque no existe el usuario {}.\n", u);
+	    let pinu = format!("No se pudo invitar porque no existe un usuario con el nombre {}.\n", u);
+	    assert_eq!(pids, strip_str(sistema(rids)));
+	    assert_eq!(pidu, strip_str(sistema(ridu)));
+	    assert_eq!(ptn, strip_str(sistema(rtn)));
+	    assert_eq!(pinu, strip_str(sistema(rinu)));
+	}
+	for c in CUARTOS {
+	    let rns  = Response{ operation: NewRoom, result: Success, extra: Some(c.to_string()) };
+	    let rne  = Response{ operation: NewRoom, result: RoomAlreadyExists, extra: Some(c.to_string()) };
+	    let rinr = Response{ operation: Invite, result: NoSuchRoom, extra: Some(c.to_string()) };
+	    let rjs  = Response{ operation: JoinRoom, result: Success, extra: Some(c.to_string()) };
+	    let rjnr = Response{ operation: JoinRoom, result: NoSuchRoom, extra: Some(c.to_string()) };
+	    let rjni = Response{ operation: JoinRoom, result: NotInvited, extra: Some(c.to_string()) };
+	    let runr = Response{ operation: RoomUsers, result: NoSuchRoom, extra: Some(c.to_string()) };
+	    let runj = Response{ operation: RoomUsers, result: NotJoined, extra: Some(c.to_string()) };
+	    let rtnr = Response{ operation: RoomText, result: NoSuchRoom, extra: Some(c.to_string()) };
+	    let rtnj = Response{ operation: RoomText, result: NotJoined, extra: Some(c.to_string()) };
+	    let rlnr = Response{ operation: LeaveRoom, result: NoSuchRoom, extra: Some(c.to_string()) };
+	    let rlnj = Response{ operation: LeaveRoom, result: NotJoined, extra: Some(c.to_string()) };
+	    let pns  = format!("* Se creó con éxito el cuarto {}. *\n", c);
+	    let pne  = format!("Ya existe un cuarto llamado {}.\n", c);
+	    let pinr = format!("No se pudo invitar porque no existe un cuarto llamado {}.\n", c);
+	    let pjs  = format!("* Te uniste al cuarto {}. *\n", c);
+	    let pjnr = format!("No pudiste unirte porque no existe un cuarto llamado {}.\n", c);
+	    let pjni = format!("No pudiste unirte porque no fuiste invitado a {}\n", c);
+	    let punr = format!("No se pudo obtener la lista de miembros porque {} no existe.\n", c);
+	    let punj = format!("No se pudo obtener la lista de miembros porque no estás en {}.\n", c);
+	    let ptnr = format!("No se pudo mandar el mensaje porque {} no existe.\n", c);
+	    let ptnj = format!("No se pudo mandar el mensaje porque no estás en {}.\n", c);
+	    let plnr = format!("No pudiste abandonar el cuarto {} porque no existe\n", c);
+	    let plnj = format!("No pudiste abandonar el cuarto {} porque no eres miembro.\n", c);
+	    assert_eq!(pns,  strip_str(sistema(rns)));
+	    assert_eq!(pne,  strip_str(sistema(rne)));
+	    assert_eq!(pinr, strip_str(sistema(rinr)));
+	    assert_eq!(pjs,  strip_str(sistema(rjs)));
+	    assert_eq!(pjnr, strip_str(sistema(rjnr)));
+	    assert_eq!(pjni, strip_str(sistema(rjni)));
+	    assert_eq!(punr, strip_str(sistema(runr)));
+	    assert_eq!(punj, strip_str(sistema(runj)));
+	    assert_eq!(ptnr, strip_str(sistema(rtnr)));
+	    assert_eq!(ptnj, strip_str(sistema(rtnj)));
+	    assert_eq!(plnr, strip_str(sistema(rlnr)));
+	    assert_eq!(plnj, strip_str(sistema(rlnj)));
+	}
+    }
 }

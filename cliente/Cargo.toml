@@ -16,3 +16,4 @@ serde_json.workspace = true
 tokio.workspace = true
 protocolo.workspace = true
 colored.workspace = true
+strip-ansi-escapes.workspace = true
