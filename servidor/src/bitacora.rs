@@ -15,7 +15,7 @@ use std::io::Error;
  * `nombre` - Posiblemente, el nombre con el que se identificó el cliente en la
  *            dirección IP.
  */
-pub fn recibido(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String>) {
+pub fn recibido(mensaje: &String, direccion: &SocketAddr, nombre: Option<String>) {
     print!("** MENSAJE {} DE {}", "RECIBIDO".green(), direccion.to_string().bold());
     if let Some (n) = nombre { print!(" ({})", n.magenta()); }
     println!(": {}", mensaje);
@@ -33,7 +33,7 @@ pub fn recibido(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String
  * `nombre` - Posiblemente, el nombre con el que se identificó el cliente en la
  *            dirección IP.
  */
-pub fn enviado(mensaje: &String, direccion: &SocketAddr, nombre: Option<&String>) {
+pub fn enviado(mensaje: &String, direccion: &SocketAddr, nombre: Option<String>) {
     print!("** MENSAJE {} A {}", "ENVIADO".green(), direccion.to_string().bold());
     if let Some (n) = nombre { print!(" ({})", n.magenta()); }
     println!(": {}", mensaje);
